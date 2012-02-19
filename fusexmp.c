@@ -291,7 +291,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		if (res <4096)
 	  	goto end;
 		//Use md5 as key to check if the read block is already in cache
-		hash_key = libhashkit_murmur(buf, size);
+		hash_key = libhashkit_md5(buf, res);
 		
 
 		HASH_FIND_INT(md5,&hash_key,temp_md5);
