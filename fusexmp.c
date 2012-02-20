@@ -34,6 +34,8 @@
 #endif
 #include <libhashkit/hashkit.h>
 
+
+
 static int xmp_getattr(const char *path, struct stat *stbuf)
 {
 	int res;
@@ -243,16 +245,127 @@ static int xmp_open(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
+int md5_cache_add(uint32_t hash_key,int index)
+{
+HASH_TABLE_MD5_CACHE *temp_md5=NULL;
+
+temp_md5=malloc(sizeof(HASH_TABLE_MD5_CACHE));	
+
+			if(temp_md5)
+			{
+				temp_md5->hash_key=hash_key;
+				temp_md5->index=index;
+				HASH_ADD_INT(md5,hash_key,temp_md5);
+				return SUCCESS;
+			}
+				
+			else
+			{
+				fprintf(stderr,"Memory allocation failure\n");		
+		 		return FAILURE;
+			}
+
+}
+
+void md5_cache_delete()
+{
+	HASH_TABLE_MD5_CACHE *temp_md5=NULL;
+}
+
+int md5_cache_find(uint32_t hash_key,HASH_TABLE_MD5_CACHE **temp_md5)
+{
+	HASH_FIND_INT(md5,&hash_key,(*temp_md5));
+
+	if(*temp_md5)
+	return SUCCESS;
+	
+	return FAILURE;
+}
+
+
+int binode_cache_add(char *key, int index)
+{
+HASH_TABLE_INODE_N_BLOCK *temp_binode=NULL;
+
+temp_binode=(HASH_TABLE_INODE_N_BLOCK *)malloc(sizeof(HASH_TABLE_INODE_N_BLOCK));
+
+			if(temp_binode)
+			{
+				memcpy(temp_binode->key,key,8);
+				temp_binode->index=index;
+				HASH_ADD_STR(block_inode,key,temp_binode);
+				return SUCCESS;
+			}
+				
+			else
+			{
+				fprintf(stderr,"Memory allocation failure\n");		
+				return FAILURE;
+			}
+
+}
+
+void binode_cache_delete()
+{
+HASH_TABLE_INODE_N_BLOCK *temp_binode=NULL;
+
+}
+
+int binode_cache_find(char *key,HASH_TABLE_INODE_N_BLOCK **temp_binode)
+{
+	HASH_FIND_STR(block_inode,key,(*temp_binode));
+
+	if(temp_binode) 
+	return SUCCESS;	
+
+	else
+	return FAILURE;
+}
+
+int memory_cache_add(int index,char *data,int size)
+{
+	HASH_TABLE_MEMORY_CACHE *temp_memory=NULL;
+	temp_memory=(HASH_TABLE_MEMORY_CACHE* )malloc(sizeof(HASH_TABLE_MEMORY_CACHE ));	
+
+			if(temp_memory)
+			{
+				temp_memory->index=index;
+				memcpy(temp_memory->data_block,data,size);
+				HASH_ADD_INT(memory,index,temp_memory);
+				return SUCCESS;
+			}
+				
+			else
+			{
+				fprintf(stderr,"Memory allocation failure\n");		
+				return FAILURE;
+
+			}
+}
+
+int memory_cache_find(int index,HASH_TABLE_MEMORY_CACHE **temp_memory)
+{
+
+	HASH_FIND_INT(memory,&index,(*temp_memory));
+
+	if(*temp_memory)
+	return SUCCESS;
+
+	else
+	return FAILURE;
+}
+
 static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		    struct fuse_file_info *fi)
 {
-	int fd;
-	int res;
+	int fd,status;
+	int res,found_index;
 	uint32_t block_num,hash_key;
-	char key[8];
+	char key[8],*data_block;
         struct stat stbuf;
 	HASH_TABLE_INODE_N_BLOCK *temp_binode=NULL;
 	HASH_TABLE_MD5_CACHE *temp_md5=NULL;
+	HASH_TABLE_MEMORY_CACHE *temp_memory=NULL;
         
         
         fprintf(stderr,"Reading...\n");
@@ -267,14 +380,19 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
         memcpy(key+4, &block_num,4);
 
 	//Check if block:inode is present in (block:inode,index) table
-	HASH_FIND_STR(block_inode,key,temp_binode);
-
-	if(temp_binode) //If found, just copy the data from (md5,4KB) table to buffer 
+	status=binode_cache_find(key,&temp_binode);
+	
+	if(status==SUCCESS) //If found, just copy the data from (md5,index) table to buffer 
 	{
-		HASH_FIND_INT(md5,&temp_binode->index,temp_md5);
-		memcpy(buf,temp_md5->data_block,size);
-		res=size;
-		fprintf(stderr, "Found in cache_mem !\n");
+		status=memory_cache_find(temp_binode->index,&temp_memory);
+		if(status==SUCCESS)		
+		{
+			memcpy(buf,temp_memory->data_block,size);
+			res=size;
+			fprintf(stderr, "Found in cache_mem !\n");
+		}
+		else
+		fprintf(stderr, "Not Found in cache_mem !\n");
 	}
 
 	else
@@ -283,7 +401,11 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		   1. Read data block from disk
 		   2. Compute md5 of the block
 		   3. Use md5 as key to check if block is already in cache
-		   4. if block is not present, create a new entry in both (md5,4KB) and (block:inode,index) tables
+		   4. if block is not present, create a new entries the following tables
+                                                (block:inode,index)
+						(index, data blocks)
+						(md5, index) 
+  
 		     else create a new entry in (block:inode,index) table and update its index field appropriately.				
 		*/
 		fprintf(stderr, "Doing read fd = %d size = %d offset = %d\n", fd, size,offset);
@@ -294,67 +416,40 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		hash_key = libhashkit_md5(buf, res);
 		
 
-		HASH_FIND_INT(md5,&hash_key,temp_md5);
+		status=md5_cache_find(hash_key,&temp_md5);
 
-		if(temp_md5==NULL)//if block is not present, create a new entry in both (md5,4KB) and (block:inode,index) tables			
+		if(status==FAILURE)//if block is not present
 		{
 			
 
-			//Adding a new entry into (md5,4KB) table
-			temp_md5=malloc(sizeof(HASH_TABLE_MD5_CACHE));	
-
-			if(temp_md5)
-			{
-				temp_md5->index=count_md5_cache;
-				temp_md5->hash_key=hash_key;
-				memcpy(temp_md5->data_block,buf,res);
-				HASH_ADD_INT(md5,index,temp_md5);
-			}
-				
-			else
-			{
-				fprintf(stderr,"Memory allocation failure\n");		
-		 		goto end;
-			}
-				
-			
-
 			//Adding a new entry into (inode:blocknumber,index) table
+			status=binode_cache_add(key,count_md5_cache);
+			if(status)
+			goto end;
+			count_block_inode++;
 
-			temp_binode=(HASH_TABLE_INODE_N_BLOCK *)malloc(sizeof(HASH_TABLE_INODE_N_BLOCK));
+			//Adding a new entry into (index,data blocks) table
+			status=memory_cache_add(count_md5_cache,buf,res);
+			if(status)
+			goto end;
 
-			if(temp_binode)
-			{
-				memcpy(temp_binode->key,key,8);
-				temp_binode->index=count_md5_cache;
-				HASH_ADD_STR(block_inode,key,temp_binode);
-			}
-				
-			else
-			{
-				fprintf(stderr,"Memory allocation failure\n");		
-		 		goto end;
-			}
+			//Adding a new entry into (md5,index) table
+			status=md5_cache_add(hash_key,count_md5_cache);
+			if(status)
+			goto end;
+			
+			count_md5_cache++;
 			
 		}	
 
 
 		else//if block is present, create a new entry in (block:inode,index) table
 		{
-			temp_binode=(HASH_TABLE_INODE_N_BLOCK *)malloc(sizeof(HASH_TABLE_INODE_N_BLOCK));
-
-			if(temp_binode)
-			{
-				memcpy(temp_binode->key,key,8);
-				temp_binode->index=temp_md5->index;
-				HASH_ADD_STR(block_inode,key,temp_binode);
-			}
-				
-			else
-			{
-				fprintf(stderr,"Memory allocation failure\n");		
-		 		goto end;
-			}
+			//Adding a new entry into (inode:blocknumber,index) table
+			status=binode_cache_add(key,temp_md5->index);
+			if(status)
+			goto end;
+			count_block_inode++;
 
 		}
 
