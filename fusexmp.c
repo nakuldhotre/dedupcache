@@ -308,7 +308,7 @@ int memory_cache_add(unsigned char *hash_key, unsigned char *data,int size)
 				memcpy(temp_memory->hash_key,hash_key,16);
 				memcpy(temp_memory->data_block,data,size);
 				HASH_ADD(hh,memory,hash_key,16,temp_memory);
-					if(HASH_COUNT(memory)>=MAX_BINODE_COUNT)
+					if(HASH_COUNT(memory)>=MAX_MEMORY_COUNT)
 			  	{
 				  	HASH_ITER(hh,memory,temp_memory,temp)
 					  {
@@ -383,8 +383,19 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 			fprintf(stderr, "Found in cache_mem !\n");
 		}
 		else   /* TODO: cache is flushed but entry is still there in block_inode */
+    {
 		  fprintf(stderr, "Not Found in cache_mem !\n");
-	}
+		  fprintf(stderr, "Doing read fd = %d size = %lu offset = %lu\n", fd, size,offset);
+  		res = pread (fd, buf, size, offset);
+		  if (res <4096)
+	  	  goto end;
+			//Adding a new entry into (hash,data blocks) table
+			status=memory_cache_add(hash_key,buf,res);
+			if(status)
+			  goto end;
+			
+		}
+  }  
 	else
 	{
 		/*if not found 
@@ -398,7 +409,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
   
 		     else create a new entry in (block:inode,index) table and update its index field appropriately.				
 		*/
-		fprintf(stderr, "Doing read fd = %d size = %d offset = %d\n", fd, size,offset);
+		fprintf(stderr, "Doing read fd = %d size = %lu offset = %lu\n", fd, size,offset);
   		res = pread (fd, buf, size, offset);
 		if (res <4096)
 	  	goto end;
