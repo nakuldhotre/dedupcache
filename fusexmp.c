@@ -245,6 +245,7 @@ static int xmp_open(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
+/*
 int md5_cache_add(uint32_t hash_key,int index)
 {
 HASH_TABLE_MD5_CACHE *temp_md5=NULL,*temp;
@@ -297,8 +298,8 @@ int md5_cache_find(uint32_t hash_key,HASH_TABLE_MD5_CACHE **temp_md5)
 	return FAILURE;
 }
 
-
-int binode_cache_add(char *key, int index)
+*/
+int binode_cache_add(char *key, char *hash_key)
 {
 HASH_TABLE_INODE_N_BLOCK *temp_binode=NULL,*temp;
 
@@ -306,9 +307,9 @@ temp_binode=(HASH_TABLE_INODE_N_BLOCK *)malloc(sizeof(HASH_TABLE_INODE_N_BLOCK))
 
 			if(temp_binode)
 			{
-				memcpy(temp_binode->key,key,8);
-				temp_binode->index=index;
-				HASH_ADD_STR(block_inode,key,temp_binode);
+				memcpy(temp_binode->inode_block,key,8);
+			  memcpy(temp_binode->hash_key, hash_key,16);
+        HASH_ADD_STR(block_inode,inode_block,temp_binode);
 				
 				if(HASH_COUNT(block_inode)>=MAX_BINODE_COUNT)
 				{
@@ -342,7 +343,7 @@ int binode_cache_find(char *key,HASH_TABLE_INODE_N_BLOCK **temp_binode)
 	if(temp_binode) 
 	{
 		HASH_DELETE(hh,block_inode,(*temp_binode));		
-		HASH_ADD_STR(block_inode,key,(*temp_binode));
+		HASH_ADD_STR(block_inode,inode_block,(*temp_binode));
 		return SUCCESS;	
 	}
 
@@ -350,32 +351,27 @@ int binode_cache_find(char *key,HASH_TABLE_INODE_N_BLOCK **temp_binode)
 	return FAILURE;
 }
 
-int memory_cache_add(int index,char *data,int size)
+int memory_cache_add(char *hash_key, char *data,int size)
 {
 	HASH_TABLE_MEMORY_CACHE *temp_memory=NULL,*temp;
 	temp_memory=(HASH_TABLE_MEMORY_CACHE* )malloc(sizeof(HASH_TABLE_MEMORY_CACHE ));	
 
 			if(temp_memory)
 			{
-				temp_memory->index=index;
+				memcpy(temp_memory->hash_key,hash_key,16);
 				memcpy(temp_memory->data_block,data,size);
-				HASH_ADD_INT(memory,index,temp_memory);
-
+				HASH_ADD_STR(memory,hash_key,temp_memory);
 					if(HASH_COUNT(memory)>=MAX_BINODE_COUNT)
-				{
-					HASH_ITER(hh,memory,temp_memory,temp)
-					{
+			  	{
+				  	HASH_ITER(hh,memory,temp_memory,temp)
+					  {
  						HASH_DELETE(hh,memory,temp_memory);
 						free(temp_memory);
 						break;
-
-					}
-					
-			
-				}
+					  }
+				  }
 				return SUCCESS;
 			}
-				
 			else
 			{
 				fprintf(stderr,"Memory allocation failure\n");		
@@ -384,15 +380,15 @@ int memory_cache_add(int index,char *data,int size)
 			}
 }
 
-int memory_cache_find(int index,HASH_TABLE_MEMORY_CACHE **temp_memory)
+int memory_cache_find(char *hash_key, HASH_TABLE_MEMORY_CACHE **temp_memory)
 {
 
-	HASH_FIND_INT(memory,&index,(*temp_memory));
+	HASH_FIND_STR(memory,hash_key,(*temp_memory));
 
 	if(*temp_memory)
 	{
 		HASH_DELETE(hh,memory,(*temp_memory));		
-		HASH_ADD_INT(memory,index,(*temp_memory));
+		HASH_ADD_STR(memory,hash_key,(*temp_memory));
 		return SUCCESS;
 	}
 
@@ -405,11 +401,10 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 {
 	int fd,status;
 	int res,found_index;
-	uint32_t block_num,hash_key;
-	char key[8],*data_block;
+	uint32_t block_num;
+	char key[8],hash_key[16], *data_block;
         struct stat stbuf;
 	HASH_TABLE_INODE_N_BLOCK *temp_binode=NULL;
-	HASH_TABLE_MD5_CACHE *temp_md5=NULL;
 	HASH_TABLE_MEMORY_CACHE *temp_memory=NULL;
         
         
@@ -424,12 +419,14 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
         memcpy(key, &stbuf.st_ino, 4);
         memcpy(key+4, &block_num,4);
 
-	//Check if block:inode is present in (block:inode,index) table
+  fprintf(stderr, "check if block is present in table");
+        //Check if block:inode is present in (block:inode,index) table
 	status=binode_cache_find(key,&temp_binode);
+  fprintf(stderr, "status = %d", status);
 	
 	if(status==SUCCESS) //If found, just copy the data from (md5,index) table to buffer 
 	{
-		status=memory_cache_find(temp_binode->index,&temp_memory);
+		status=memory_cache_find(temp_binode->hash_key,&temp_memory);
 		if(status==SUCCESS)		
 		{
 			memcpy(buf,temp_memory->data_block,size);
@@ -458,32 +455,25 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		if (res <4096)
 	  	goto end;
 		//Use md5 as key to check if the read block is already in cache
-		hash_key = libhashkit_md5(buf, res);
+		libhashkit_md5_signature(buf, res, hash_key);
 		
 
-		status=md5_cache_find(hash_key,&temp_md5);
+		status=memory_cache_find(hash_key,&temp_memory);
 
 		if(status==FAILURE)//if block is not present
 		{
 			
 
 			//Adding a new entry into (inode:blocknumber,index) table
-			status=binode_cache_add(key,count_md5_cache);
+			status=binode_cache_add(key,hash_key);
 			if(status)
 			goto end;
 			count_block_inode++;
 
 			//Adding a new entry into (index,data blocks) table
-			status=memory_cache_add(count_md5_cache,buf,res);
+			status=memory_cache_add(hash_key,buf,res);
 			if(status)
 			goto end;
-
-			//Adding a new entry into (md5,index) table
-			status=md5_cache_add(hash_key,count_md5_cache);
-			if(status)
-			goto end;
-			
-			count_md5_cache++;
 			
 		}	
 
@@ -491,14 +481,10 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		else//if block is present, create a new entry in (block:inode,index) table
 		{
 			//Adding a new entry into (inode:blocknumber,index) table
-			status=binode_cache_add(key,temp_md5->index);
+			status=binode_cache_add(key,hash_key);
 			if(status)
 			goto end;
-			count_block_inode++;
-
 		}
-
-		
 	}
 
 
