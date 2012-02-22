@@ -356,10 +356,8 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 	HASH_TABLE_MEMORY_CACHE temp_memory;
 	HASH_TABLE_MEMORY_CACHE *temp_memory1=NULL;
 
-        
-        
-        fprintf(stderr,"Reading...\n");
-        fprintf(stderr,"binode size = %d cache size = %d\n", HASH_COUNT(block_inode), HASH_COUNT(memory));
+  fprintf(stderr,"Reading...\n");
+  fprintf(stderr,"binode size = %d cache size = %d\n", HASH_COUNT(block_inode), HASH_COUNT(memory));
 
 	(void) fi;
 	fd = open(path, O_RDONLY);
@@ -373,8 +371,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 
   fprintf(stderr, "check if block %u %u is present in table\n", *((uint32_t *)key),*((uint32_t *)(key+4)) );
  
-        //Check if block:inode is present in (block:inode,index) table]
-//  temp_binode=(*HASH_TABLE_INODE_N_BLOCK )malloc(sizeof(HASH_TABLE_INODE_N_BLOCK ));
+   //Check if block:inode is present in (block:inode,index) table]
   status=binode_cache_find(key,&temp_binode1);
   fprintf(stderr, "status = %d\n", status);
 	
@@ -387,7 +384,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 			res=size;
 			fprintf(stderr, "Found in cache_mem !\n");
 		}
-		else
+		else   /* TODO: cache is flushed but entry is still there in block_inode */
 		  fprintf(stderr, "Not Found in cache_mem !\n");
 	}
 	else
@@ -409,39 +406,32 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 	  	goto end;
 		//Use md5 as key to check if the read block is already in cache
 		libhashkit_md5_signature(buf, res, hash_key);
-		
-
 		status=memory_cache_find(hash_key,&temp_memory1);
+    fprintf(stderr, "memory_cache_find status = %d\n", status);
 
 		if(status==FAILURE)//if block is not present
 		{
-			
-
-			//Adding a new entry into (inode:blocknumber,index) table
+			//Adding a new entry into (inode:blocknumber,hash) table
 			status=binode_cache_add(key,hash_key);
 			if(status)
 			goto end;
 			count_block_inode++;
 
-			//Adding a new entry into (index,data blocks) table
+			//Adding a new entry into (hash,data blocks) table
 			status=memory_cache_add(hash_key,buf,res);
 			if(status)
 			goto end;
 			
 		}	
 
-
-		else//if block is present, create a new entry in (block:inode,index) table
+		else//if block is present, create a new entry in (block:inode,hash) table
 		{
-			//Adding a new entry into (inode:blocknumber,index) table
+			//Adding a new entry into (inode:blocknumber,hash) table
 			status=binode_cache_add(key,hash_key);
 			if(status)
 			goto end;
 		}
 	}
-
-
-
 end:
 	if (res == -1)
 		res = -errno;
