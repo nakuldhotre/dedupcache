@@ -5,7 +5,7 @@
 typedef struct 
 {
 	unsigned char inode_block[8];
-	char hash_key[16];
+	unsigned char hash_key[16];
         UT_hash_handle hh;
 }HASH_TABLE_INODE_N_BLOCK;
 
@@ -21,7 +21,7 @@ typedef struct
 
 typedef struct 
 {
-        char hash_key[16];
+        unsigned char hash_key[16];
         unsigned char data_block[4096];
         UT_hash_handle hh;
 }HASH_TABLE_MEMORY_CACHE;

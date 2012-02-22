@@ -245,61 +245,7 @@ static int xmp_open(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
-/*
-int md5_cache_add(uint32_t hash_key,int index)
-{
-HASH_TABLE_MD5_CACHE *temp_md5=NULL,*temp;
-
-temp_md5=malloc(sizeof(HASH_TABLE_MD5_CACHE));	
-
-			if(temp_md5)
-			{
-				temp_md5->hash_key=hash_key;
-				temp_md5->index=index;
-				HASH_ADD_INT(md5,hash_key,temp_md5);
-
-				if(HASH_COUNT(md5)>=MAX_BINODE_COUNT)
-				{
-					HASH_ITER(hh,md5,temp_md5,temp)
-					{
- 						HASH_DELETE(hh,md5,temp_md5);
-						free(temp_md5);
-						break;
-
-					}
-					
-			
-				}
-
-
-				return SUCCESS;
-			}
-				
-			else
-			{
-				fprintf(stderr,"Memory allocation failure\n");		
-		 		return FAILURE;
-			}
-
-}
-
-
-int md5_cache_find(uint32_t hash_key,HASH_TABLE_MD5_CACHE **temp_md5)
-{
-	HASH_FIND_INT(md5,&hash_key,(*temp_md5));
-
-	if(*temp_md5)
-	{
-		HASH_DELETE(hh,md5,(*temp_md5));		
-		HASH_ADD_INT(md5,hash_key,(*temp_md5));
-		return SUCCESS;
-	}
-	
-	return FAILURE;
-}
-
-*/
-int binode_cache_add(char *key, char *hash_key)
+int binode_cache_add(unsigned char *key, unsigned char *hash_key)
 {
 HASH_TABLE_INODE_N_BLOCK *temp_binode=NULL,*temp;
 
@@ -309,7 +255,7 @@ temp_binode=(HASH_TABLE_INODE_N_BLOCK *)malloc(sizeof(HASH_TABLE_INODE_N_BLOCK))
 			{
 				memcpy(temp_binode->inode_block,key,8);
 			  memcpy(temp_binode->hash_key, hash_key,16);
-        HASH_ADD_STR(block_inode,inode_block,temp_binode);
+        HASH_ADD(hh, block_inode,inode_block, 8,temp_binode);
 				
 				if(HASH_COUNT(block_inode)>=MAX_BINODE_COUNT)
 				{
@@ -336,14 +282,15 @@ temp_binode=(HASH_TABLE_INODE_N_BLOCK *)malloc(sizeof(HASH_TABLE_INODE_N_BLOCK))
 }
 
 
-int binode_cache_find(char *key,HASH_TABLE_INODE_N_BLOCK **temp_binode)
+int binode_cache_find(unsigned char *key,HASH_TABLE_INODE_N_BLOCK **temp_binode)
 {
-	HASH_FIND_STR(block_inode,key,(*temp_binode));
 
-	if(temp_binode) 
+	HASH_FIND(hh, block_inode,key,8,(*temp_binode));
+
+	if(*temp_binode) 
 	{
 		HASH_DELETE(hh,block_inode,(*temp_binode));		
-		HASH_ADD_STR(block_inode,inode_block,(*temp_binode));
+		HASH_ADD(hh,block_inode,inode_block,8,(*temp_binode));
 		return SUCCESS;	
 	}
 
@@ -351,7 +298,7 @@ int binode_cache_find(char *key,HASH_TABLE_INODE_N_BLOCK **temp_binode)
 	return FAILURE;
 }
 
-int memory_cache_add(char *hash_key, char *data,int size)
+int memory_cache_add(unsigned char *hash_key, unsigned char *data,int size)
 {
 	HASH_TABLE_MEMORY_CACHE *temp_memory=NULL,*temp;
 	temp_memory=(HASH_TABLE_MEMORY_CACHE* )malloc(sizeof(HASH_TABLE_MEMORY_CACHE ));	
@@ -360,7 +307,7 @@ int memory_cache_add(char *hash_key, char *data,int size)
 			{
 				memcpy(temp_memory->hash_key,hash_key,16);
 				memcpy(temp_memory->data_block,data,size);
-				HASH_ADD_STR(memory,hash_key,temp_memory);
+				HASH_ADD(hh,memory,hash_key,16,temp_memory);
 					if(HASH_COUNT(memory)>=MAX_BINODE_COUNT)
 			  	{
 				  	HASH_ITER(hh,memory,temp_memory,temp)
@@ -383,12 +330,12 @@ int memory_cache_add(char *hash_key, char *data,int size)
 int memory_cache_find(char *hash_key, HASH_TABLE_MEMORY_CACHE **temp_memory)
 {
 
-	HASH_FIND_STR(memory,hash_key,(*temp_memory));
+	HASH_FIND(hh, memory,hash_key, 16, (*temp_memory));
 
-	if(*temp_memory)
+	if((*temp_memory))
 	{
 		HASH_DELETE(hh,memory,(*temp_memory));		
-		HASH_ADD_STR(memory,hash_key,(*temp_memory));
+		HASH_ADD(hh, memory,hash_key, 16, (*temp_memory));
 		return SUCCESS;
 	}
 
@@ -402,13 +349,18 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 	int fd,status;
 	int res,found_index;
 	uint32_t block_num;
-	char key[8],hash_key[16], *data_block;
+	unsigned char key[8],hash_key[16], *data_block;
         struct stat stbuf;
-	HASH_TABLE_INODE_N_BLOCK *temp_binode=NULL;
-	HASH_TABLE_MEMORY_CACHE *temp_memory=NULL;
+	HASH_TABLE_INODE_N_BLOCK temp_binode;
+	HASH_TABLE_INODE_N_BLOCK *temp_binode1=NULL;
+	HASH_TABLE_MEMORY_CACHE temp_memory;
+	HASH_TABLE_MEMORY_CACHE *temp_memory1=NULL;
+
         
         
         fprintf(stderr,"Reading...\n");
+        fprintf(stderr,"binode size = %d cache size = %d\n", HASH_COUNT(block_inode), HASH_COUNT(memory));
+
 	(void) fi;
 	fd = open(path, O_RDONLY);
 	if (fd == -1)
@@ -419,24 +371,25 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
         memcpy(key, &stbuf.st_ino, 4);
         memcpy(key+4, &block_num,4);
 
-  fprintf(stderr, "check if block is present in table");
-        //Check if block:inode is present in (block:inode,index) table
-	status=binode_cache_find(key,&temp_binode);
-  fprintf(stderr, "status = %d", status);
+  fprintf(stderr, "check if block %u %u is present in table\n", *((uint32_t *)key),*((uint32_t *)(key+4)) );
+ 
+        //Check if block:inode is present in (block:inode,index) table]
+//  temp_binode=(*HASH_TABLE_INODE_N_BLOCK )malloc(sizeof(HASH_TABLE_INODE_N_BLOCK ));
+  status=binode_cache_find(key,&temp_binode1);
+  fprintf(stderr, "status = %d\n", status);
 	
 	if(status==SUCCESS) //If found, just copy the data from (md5,index) table to buffer 
 	{
-		status=memory_cache_find(temp_binode->hash_key,&temp_memory);
+		status=memory_cache_find(temp_binode.hash_key,&temp_memory1);
 		if(status==SUCCESS)		
 		{
-			memcpy(buf,temp_memory->data_block,size);
+			memcpy(buf,temp_memory1->data_block,size);
 			res=size;
 			fprintf(stderr, "Found in cache_mem !\n");
 		}
 		else
-		fprintf(stderr, "Not Found in cache_mem !\n");
+		  fprintf(stderr, "Not Found in cache_mem !\n");
 	}
-
 	else
 	{
 		/*if not found 
@@ -458,7 +411,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		libhashkit_md5_signature(buf, res, hash_key);
 		
 
-		status=memory_cache_find(hash_key,&temp_memory);
+		status=memory_cache_find(hash_key,&temp_memory1);
 
 		if(status==FAILURE)//if block is not present
 		{
