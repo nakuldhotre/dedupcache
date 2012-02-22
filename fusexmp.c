@@ -351,9 +351,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 	uint32_t block_num;
 	unsigned char key[8],hash_key[16], *data_block;
         struct stat stbuf;
-	HASH_TABLE_INODE_N_BLOCK temp_binode;
 	HASH_TABLE_INODE_N_BLOCK *temp_binode1=NULL;
-	HASH_TABLE_MEMORY_CACHE temp_memory;
 	HASH_TABLE_MEMORY_CACHE *temp_memory1=NULL;
 
   fprintf(stderr,"Reading...\n");
@@ -377,7 +375,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 	
 	if(status==SUCCESS) //If found, just copy the data from (md5,index) table to buffer 
 	{
-		status=memory_cache_find(temp_binode.hash_key,&temp_memory1);
+		status=memory_cache_find(temp_binode1->hash_key,&temp_memory1);
 		if(status==SUCCESS)		
 		{
 			memcpy(buf,temp_memory1->data_block,size);
