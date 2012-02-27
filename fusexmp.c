@@ -35,8 +35,22 @@
 #endif
 #include <libhashkit/hashkit.h>
 
+static double mem_add, mem_find, binode_add, binode_find;
 
+void *xmp_init(struct fuse_conn_info *conn)
+{
+  mem_add = 0;
+  mem_find = 0;
+  binode_add = 0;
+  binode_find = 0;
+  return FUSEXMP_DATA;
+}
 
+void xmp_destroy ()
+{
+  fprintf(stderr, " mem_add = %lf\n mem_find = %lf\nbinode_add = %lf\ninode_find = %lf\n",
+          mem_add,mem_find,binode_add,binode_find);
+}
 static int xmp_getattr(const char *path, struct stat *stbuf)
 {
 	int res;
@@ -249,6 +263,8 @@ static int xmp_open(const char *path, struct fuse_file_info *fi)
 int binode_cache_add(unsigned char *key, unsigned char *hash_key)
 {
 HASH_TABLE_INODE_N_BLOCK *temp_binode=NULL,*temp;
+time_t start,end;
+int ret = 0;
 
 temp_binode=(HASH_TABLE_INODE_N_BLOCK *)malloc(sizeof(HASH_TABLE_INODE_N_BLOCK));
 
@@ -270,38 +286,56 @@ temp_binode=(HASH_TABLE_INODE_N_BLOCK *)malloc(sizeof(HASH_TABLE_INODE_N_BLOCK))
 					
 			
 				}
-
-				return SUCCESS;
+       
+				ret =  SUCCESS;
+        goto exit;
 			}
 				
 			else
 			{
 				fprintf(stderr,"Memory allocation failure\n");		
-				return FAILURE;
+				ret = FAILURE;
+        goto exit;
 			}
+
+exit:
+
+#ifdef DEBUG_FUSEXMP
+      fprintf(stderr,"binode_add = %f end = %ld start = %ld\n", binode_add, end, start);
+
+#endif
+      return ret;
 
 }
 
 
 int binode_cache_find(unsigned char *key,HASH_TABLE_INODE_N_BLOCK **temp_binode)
 {
-
 	HASH_FIND(hh, block_inode,key,8,(*temp_binode));
+clock_t start,end;
+int ret = 0;
+start=clock();
 
 	if(*temp_binode) 
 	{
 		HASH_DELETE(hh,block_inode,(*temp_binode));		
 		HASH_ADD(hh,block_inode,inode_block,8,(*temp_binode));
-		return SUCCESS;	
+		ret = SUCCESS;	
 	}
-
 	else
-	return FAILURE;
+  	ret = FAILURE;
+
+  end = clock();
+  binode_find += ((double)(end - start))/CLOCKS_PER_SEC;
+  return ret; 
 }
 
 int memory_cache_add(unsigned char *hash_key, unsigned char *data,int size)
 {
 	HASH_TABLE_MEMORY_CACHE *temp_memory=NULL,*temp;
+  clock_t start,end;
+  int ret = 0;
+  start=clock();
 	temp_memory=(HASH_TABLE_MEMORY_CACHE* )malloc(sizeof(HASH_TABLE_MEMORY_CACHE ));	
 
 			if(temp_memory)
@@ -318,30 +352,47 @@ int memory_cache_add(unsigned char *hash_key, unsigned char *data,int size)
 						break;
 					  }
 				  }
-				return SUCCESS;
+				ret =  SUCCESS;
+        goto exit;
 			}
 			else
 			{
 				fprintf(stderr,"Memory allocation failure\n");		
-				return FAILURE;
-
+				ret = FAILURE;
+        goto exit;
 			}
+exit :
+  end = clock();
+    mem_add += ((double)(end - start))/CLOCKS_PER_SEC;
+      return ret;
 }
 
 int memory_cache_find(char *hash_key, HASH_TABLE_MEMORY_CACHE **temp_memory)
 {
 
 	HASH_FIND(hh, memory,hash_key, 16, (*temp_memory));
+ clock_t start,end;
+   int ret = 0;
+     start=clock();
 
 	if((*temp_memory))
 	{
 		HASH_DELETE(hh,memory,(*temp_memory));		
 		HASH_ADD(hh, memory,hash_key, 16, (*temp_memory));
-		return SUCCESS;
+		ret= SUCCESS;
+    goto exit;
 	}
 
 	else
-	return FAILURE;
+  {
+	ret=FAILURE;
+  goto exit;
+  }
+exit:  
+  end = clock();
+  mem_find += ((double)(end - start))/CLOCKS_PER_SEC;
+  return ret;
+
 }
 
 static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
@@ -405,7 +456,7 @@ fclose(fp);
 #endif 
 			case_1.count++;
 		}
-		else   /* TODO: cache is flushed but entry is still there in block_inode */
+		else 
     		{
 #ifdef DEBUG_FUXEXMP
 		  fprintf(stderr, "Not Found in cache_mem !\n");
@@ -602,6 +653,8 @@ static struct fuse_operations xmp_oper = {
 	.statfs		= xmp_statfs,
 	.release	= xmp_release,
 	.fsync		= xmp_fsync,
+  .init     = xmp_init,
+  .destroy  = xmp_destroy,
 #ifdef HAVE_SETXATTR
 	.setxattr	= xmp_setxattr,
 	.getxattr	= xmp_getxattr,

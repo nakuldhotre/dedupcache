@@ -40,3 +40,4 @@ typedef struct
 	int count;
 }STATS;
 
+#define FUSEXMP_DATA fuse_get_context()->private_data
