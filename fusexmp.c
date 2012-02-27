@@ -27,6 +27,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <sys/time.h>
+#include <time.h>
 #include "uthash.h"
 #include "fusexmp.h"
 #ifdef HAVE_SETXATTR
@@ -351,11 +352,26 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 	uint32_t block_num;
 	unsigned char key[8],hash_key[16], *data_block;
         struct stat stbuf;
+	clock_t start,end;
+#ifdef DEBUG_FUSEXMP
+	FILE *fp=fopen("/home/ranjan/stats","r");
+#endif
+	STATS case_1,case_2,case_3,case_4;
+#ifdef DEBUG_FUXEXMP
+	fscanf(fp,"%d",&case_1.count);
+	fscanf(fp,"%d",&case_2.count);
+	fscanf(fp,"%d",&case_3.count);
+	fscanf(fp,"%d",&case_4.count);
+fclose(fp);	
+#endif
+	start=clock();
 	HASH_TABLE_INODE_N_BLOCK *temp_binode1=NULL;
 	HASH_TABLE_MEMORY_CACHE *temp_memory1=NULL;
 
+#ifdef DEBUG_FUXEXMP
   fprintf(stderr,"Reading...\n");
   fprintf(stderr,"binode size = %d cache size = %d\n", HASH_COUNT(block_inode), HASH_COUNT(memory));
+#endif
 
 	(void) fi;
 	fd = open(path, O_RDONLY);
@@ -367,11 +383,15 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
         memcpy(key, &stbuf.st_ino, 4);
         memcpy(key+4, &block_num,4);
 
+#ifdef DEBUG_FUXEXMP
   fprintf(stderr, "check if block %u %u is present in table\n", *((uint32_t *)key),*((uint32_t *)(key+4)) );
+#endif 
  
    //Check if block:inode is present in (block:inode,index) table]
   status=binode_cache_find(key,&temp_binode1);
+#ifdef DEBUG_FUXEXMP
   fprintf(stderr, "status = %d\n", status);
+#endif 
 	
 	if(status==SUCCESS) //If found, just copy the data from (md5,index) table to buffer 
 	{
@@ -380,12 +400,17 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 		{
 			memcpy(buf,temp_memory1->data_block,size);
 			res=size;
+#ifdef DEBUG_FUXEXMP
 			fprintf(stderr, "Found in cache_mem !\n");
+#endif 
+			case_1.count++;
 		}
 		else   /* TODO: cache is flushed but entry is still there in block_inode */
-    {
+    		{
+#ifdef DEBUG_FUXEXMP
 		  fprintf(stderr, "Not Found in cache_mem !\n");
 		  fprintf(stderr, "Doing read fd = %d size = %lu offset = %lu\n", fd, size,offset);
+#endif 
   		res = pread (fd, buf, size, offset);
 		  if (res <4096)
 	  	  goto end;
@@ -393,6 +418,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 			status=memory_cache_add(hash_key,buf,res);
 			if(status)
 			  goto end;
+			case_2.count++;
 			
 		}
   }  
@@ -409,14 +435,18 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
   
 		     else create a new entry in (block:inode,index) table and update its index field appropriately.				
 		*/
+#ifdef DEBUG_FUXEXMP
 		fprintf(stderr, "Doing read fd = %d size = %lu offset = %lu\n", fd, size,offset);
+#endif 
   		res = pread (fd, buf, size, offset);
 		if (res <4096)
 	  	goto end;
 		//Use md5 as key to check if the read block is already in cache
 		libhashkit_md5_signature(buf, res, hash_key);
 		status=memory_cache_find(hash_key,&temp_memory1);
+#ifdef DEBUG_FUXEXMP
     fprintf(stderr, "memory_cache_find status = %d\n", status);
+#endif 
 
 		if(status==FAILURE)//if block is not present
 		{
@@ -430,6 +460,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 			status=memory_cache_add(hash_key,buf,res);
 			if(status)
 			goto end;
+			case_3.count++;
 			
 		}	
 
@@ -439,13 +470,24 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 			status=binode_cache_add(key,hash_key);
 			if(status)
 			goto end;
+			case_4.count++;
 		}
 	}
 end:
 	if (res == -1)
 		res = -errno;
 
+
+	end=clock();
 	close(fd);
+#ifdef DEBUG_FUXEXMP
+fp=fopen("/home/ranjan/stats","w");
+	fprintf(fp,"%d\n",case_1.count);
+	fprintf(fp,"%d\n",case_2.count);
+	fprintf(fp,"%d\n",case_3.count);
+	fprintf(fp,"%d\n",case_4.count);
+fclose(fp);
+#endif 
 	return res;
 }
 

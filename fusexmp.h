@@ -1,5 +1,5 @@
-#define MAX_MEMORY_COUNT 10
-#define MAX_BINODE_COUNT 20
+#define MAX_MEMORY_COUNT 1000
+#define MAX_BINODE_COUNT 10000
 #define SUCCESS 0
 #define FAILURE 1
 typedef struct 
@@ -31,3 +31,12 @@ HASH_TABLE_INODE_N_BLOCK *block_inode=NULL;
 HASH_TABLE_MEMORY_CACHE *memory=NULL;
 
 static int count_block_inode=0,count_md5_cache=0;
+
+//char cases[3][10]={"Ranjan","nakul","india"};
+
+typedef struct
+{
+	char name[70];
+	int count;
+}STATS;
+
