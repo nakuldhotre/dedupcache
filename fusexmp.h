@@ -1,5 +1,5 @@
-#define MAX_MEMORY_COUNT 1000
-#define MAX_BINODE_COUNT 10000
+#define MAX_MEMORY_COUNT 10000
+#define MAX_BINODE_COUNT 100000
 #define SUCCESS 0
 #define FAILURE 1
 typedef struct 

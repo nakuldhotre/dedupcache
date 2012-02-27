@@ -263,8 +263,9 @@ static int xmp_open(const char *path, struct fuse_file_info *fi)
 int binode_cache_add(unsigned char *key, unsigned char *hash_key)
 {
 HASH_TABLE_INODE_N_BLOCK *temp_binode=NULL,*temp;
-time_t start,end;
+clock_t start,end;
 int ret = 0;
+start=clock();
 
 temp_binode=(HASH_TABLE_INODE_N_BLOCK *)malloc(sizeof(HASH_TABLE_INODE_N_BLOCK));
 
@@ -300,11 +301,9 @@ temp_binode=(HASH_TABLE_INODE_N_BLOCK *)malloc(sizeof(HASH_TABLE_INODE_N_BLOCK))
 
 exit:
 
-#ifdef DEBUG_FUSEXMP
-      fprintf(stderr,"binode_add = %f end = %ld start = %ld\n", binode_add, end, start);
-
-#endif
-      return ret;
+  end = clock();
+  binode_add += ((double)(end - start))/CLOCKS_PER_SEC;
+  return ret;
 
 }
 
