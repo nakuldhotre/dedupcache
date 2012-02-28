@@ -53,9 +53,32 @@ void *xmp_init(struct fuse_conn_info *conn)
 
 void xmp_destroy ()
 {
-  fprintf(stderr, " mem_add = %lf\n mem_find = %lf\nbinode_add = %lf\ninode_find = %lf\n",
+HASH_TABLE_MEMORY_CACHE *temp2;
+HASH_TABLE_INODE_N_BLOCK *temp1;
+fprintf(stderr,"Calling destroy..\n");
+ fprintf(stderr, " mem_add = %lf\n mem_find = %lf\nbinode_add = %lf\ninode_find = %lf\n",
           mem_add,mem_find,binode_add,binode_find);
+
+  while(block_inode)
+         {
+        temp1=block_inode->hh.next;
+        free(block_inode);
+        block_inode=temp1;
+        }
+
+  while(memory)
+ {
+        temp2=memory->hh.next;
+        free(memory);
+        memory=temp2;
+ }
+
+fprintf(stderr,"\ncase1=%d\n",case1);
+fprintf(stderr,"\ncase2=%d\n",case2);
+fprintf(stderr,"\ncase3=%d\n",case3);
+fprintf(stderr,"\ncase4=%d\n",case4);
 }
+
 static int xmp_getattr(const char *path, struct stat *stbuf)
 {
 	int res;
@@ -466,7 +489,7 @@ fclose(fp);
 #ifdef DEBUG_FUXEXMP
 			fprintf(stderr, "Found in cache_mem !\n");
 #endif 
-			case_1.count++;
+			case1++;
 		}
 		else 
     		{
@@ -481,7 +504,7 @@ fclose(fp);
 			status=memory_cache_add(hash_key,buf,res);
 			if(status)
 			  goto end;
-			case_2.count++;
+			case2++;
 			
 		}
   }  
@@ -523,7 +546,7 @@ fclose(fp);
 			status=memory_cache_add(hash_key,buf,res);
 			if(status)
 			  goto end;
-			case_3.count++;
+			case3++;
 			
 		}	
 
@@ -533,7 +556,7 @@ fclose(fp);
 			status=binode_cache_add(key,hash_key);
 			if(status)
 			  goto end;
-			case_4.count++;
+			case4++;
 		}
 	}
 end:
