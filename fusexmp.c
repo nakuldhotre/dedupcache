@@ -27,6 +27,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <sys/time.h>
+#include <sys/mman.h>
 #include <time.h>
 #include "uthash.h"
 #include "fusexmp.h"
@@ -36,6 +37,10 @@
 #include <libhashkit/hashkit.h>
 
 static double mem_add, mem_find, binode_add, binode_find;
+void libhashkit_md5_signature_wrap(const char *buf, int res, char *hash_key)
+{
+  libhashkit_md5_signature(buf, res, hash_key);
+}
 
 void *xmp_init(struct fuse_conn_info *conn)
 {
@@ -264,10 +269,12 @@ int binode_cache_add(unsigned char *key, unsigned char *hash_key)
 {
 HASH_TABLE_INODE_N_BLOCK *temp_binode=NULL,*temp;
 clock_t start,end;
-int ret = 0;
+int ret = 0, i = 0;
 start=clock();
 
 temp_binode=(HASH_TABLE_INODE_N_BLOCK *)malloc(sizeof(HASH_TABLE_INODE_N_BLOCK));
+mlock(temp_binode, sizeof(HASH_TABLE_INODE_N_BLOCK));
+
 
 			if(temp_binode)
 			{
@@ -277,13 +284,15 @@ temp_binode=(HASH_TABLE_INODE_N_BLOCK *)malloc(sizeof(HASH_TABLE_INODE_N_BLOCK))
 				
 				if(HASH_COUNT(block_inode)>=MAX_BINODE_COUNT)
 				{
-					HASH_ITER(hh,block_inode,temp_binode,temp)
-					{
- 						HASH_DELETE(hh,block_inode,temp_binode);
-						free(temp_binode);
-						break;
-
-					}
+          for (i=0;i<MAX_BINODE_COUNT/10; i++)
+          {
+					  HASH_ITER(hh,block_inode,temp_binode,temp)
+					  {
+ 						  HASH_DELETE(hh,block_inode,temp_binode);
+						  free(temp_binode);
+						  break;
+    				}
+          }
 					
 			
 				}
@@ -310,10 +319,10 @@ exit:
 
 int binode_cache_find(unsigned char *key,HASH_TABLE_INODE_N_BLOCK **temp_binode)
 {
-	HASH_FIND(hh, block_inode,key,8,(*temp_binode));
 clock_t start,end;
 int ret = 0;
 start=clock();
+HASH_FIND(hh, block_inode,key, 8, (*temp_binode));
 
 	if(*temp_binode) 
 	{
@@ -333,24 +342,27 @@ int memory_cache_add(unsigned char *hash_key, unsigned char *data,int size)
 {
 	HASH_TABLE_MEMORY_CACHE *temp_memory=NULL,*temp;
   clock_t start,end;
-  int ret = 0;
+  int ret = 0,i;
   start=clock();
 	temp_memory=(HASH_TABLE_MEMORY_CACHE* )malloc(sizeof(HASH_TABLE_MEMORY_CACHE ));	
-
+  mlock(temp_memory, sizeof(HASH_TABLE_MEMORY_CACHE));
 			if(temp_memory)
 			{
 				memcpy(temp_memory->hash_key,hash_key,16);
 				memcpy(temp_memory->data_block,data,size);
 				HASH_ADD(hh,memory,hash_key,16,temp_memory);
-					if(HASH_COUNT(memory)>=MAX_MEMORY_COUNT)
-			  	{
-				  	HASH_ITER(hh,memory,temp_memory,temp)
+				if(HASH_COUNT(memory)>=MAX_MEMORY_COUNT)
+			  {
+          for (i=0;i<MAX_MEMORY_COUNT/10;i++)
+          {
+            HASH_ITER(hh,memory,temp_memory,temp)
 					  {
- 						HASH_DELETE(hh,memory,temp_memory);
-						free(temp_memory);
-						break;
+ 						  HASH_DELETE(hh,memory,temp_memory);
+						  free(temp_memory);
+						  break;
 					  }
-				  }
+          }            
+        }
 				ret =  SUCCESS;
         goto exit;
 			}
@@ -369,10 +381,11 @@ exit :
 int memory_cache_find(char *hash_key, HASH_TABLE_MEMORY_CACHE **temp_memory)
 {
 
-	HASH_FIND(hh, memory,hash_key, 16, (*temp_memory));
  clock_t start,end;
    int ret = 0;
      start=clock();
+
+  HASH_FIND(hh, memory,hash_key, 16, (*temp_memory));
 
 	if((*temp_memory))
 	{
@@ -492,7 +505,7 @@ fclose(fp);
 		if (res <4096)
 	  	goto end;
 		//Use md5 as key to check if the read block is already in cache
-		libhashkit_md5_signature(buf, res, hash_key);
+		libhashkit_md5_signature_wrap(buf, res, hash_key);
 		status=memory_cache_find(hash_key,&temp_memory1);
 #ifdef DEBUG_FUXEXMP
     fprintf(stderr, "memory_cache_find status = %d\n", status);
@@ -503,13 +516,13 @@ fclose(fp);
 			//Adding a new entry into (inode:blocknumber,hash) table
 			status=binode_cache_add(key,hash_key);
 			if(status)
-			goto end;
+			  goto end;
 			count_block_inode++;
 
 			//Adding a new entry into (hash,data blocks) table
 			status=memory_cache_add(hash_key,buf,res);
 			if(status)
-			goto end;
+			  goto end;
 			case_3.count++;
 			
 		}	
@@ -519,7 +532,7 @@ fclose(fp);
 			//Adding a new entry into (inode:blocknumber,hash) table
 			status=binode_cache_add(key,hash_key);
 			if(status)
-			goto end;
+			  goto end;
 			case_4.count++;
 		}
 	}
