@@ -53,7 +53,7 @@ void *xmp_init(struct fuse_conn_info *conn)
 
 void xmp_destroy ()
 {
-HASH_TABLE_MEMORY_CACHE *temp2;
+/*HASH_TABLE_MEMORY_CACHE *temp2;
 HASH_TABLE_INODE_N_BLOCK *temp1;
 fprintf(stderr,"Calling destroy..\n");
  fprintf(stderr, " mem_add = %lf\n mem_find = %lf\nbinode_add = %lf\ninode_find = %lf\n",
@@ -73,6 +73,7 @@ fprintf(stderr,"Calling destroy..\n");
         memory=temp2;
  }
 
+ */
 fprintf(stderr,"\ncase1=%d\n",case1);
 fprintf(stderr,"\ncase2=%d\n",case2);
 fprintf(stderr,"\ncase3=%d\n",case3);
@@ -364,14 +365,18 @@ HASH_FIND(hh, block_inode,key, 8, (*temp_binode));
 int memory_cache_add(unsigned char *hash_key, unsigned char *data,int size)
 {
 	HASH_TABLE_MEMORY_CACHE *temp_memory=NULL,*temp;
+  unsigned char *data_block = NULL;
   clock_t start,end;
   int ret = 0,i;
   start=clock();
 	temp_memory=(HASH_TABLE_MEMORY_CACHE* )malloc(sizeof(HASH_TABLE_MEMORY_CACHE ));	
+  data_block = malloc (4096);
   mlock(temp_memory, sizeof(HASH_TABLE_MEMORY_CACHE));
+  mlock(data_block, 4096);
 			if(temp_memory)
 			{
 				memcpy(temp_memory->hash_key,hash_key,16);
+        temp_memory->data_block = data_block;
 				memcpy(temp_memory->data_block,data,size);
 				HASH_ADD(hh,memory,hash_key,16,temp_memory);
 				if(HASH_COUNT(memory)>=MAX_MEMORY_COUNT)
@@ -381,6 +386,7 @@ int memory_cache_add(unsigned char *hash_key, unsigned char *data,int size)
             HASH_ITER(hh,memory,temp_memory,temp)
 					  {
  						  HASH_DELETE(hh,memory,temp_memory);
+              free(temp_memory->data_block);
 						  free(temp_memory);
 						  break;
 					  }

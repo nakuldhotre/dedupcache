@@ -22,7 +22,7 @@ typedef struct
 typedef struct 
 {
         unsigned char hash_key[16];
-        unsigned char data_block[4096];
+        unsigned char *data_block;
         UT_hash_handle hh;
 }HASH_TABLE_MEMORY_CACHE;
 
