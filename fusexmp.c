@@ -289,7 +289,7 @@ static int xmp_open(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
-int binode_cache_add(unsigned char *key, unsigned char *hash_key)
+int binode_cache_add(uint64_t key, unsigned char *hash_key)
 {
 HASH_TABLE_INODE_N_BLOCK *temp_binode=NULL,*temp;
 clock_t start,end;
@@ -302,34 +302,34 @@ mlock(temp_binode, sizeof(HASH_TABLE_INODE_N_BLOCK));
 
 			if(temp_binode)
 			{
-				memcpy(temp_binode->inode_block,key,8);
-			  memcpy(temp_binode->hash_key, hash_key,16);
-        HASH_ADD(hh, block_inode,inode_block, 8,temp_binode);
+				temp_binode->inode_block=key;
+			        memcpy(temp_binode->hash_key, hash_key,16);
+			        HASH_ADD(hh, block_inode,inode_block, 8,temp_binode);
 				
 				if(HASH_COUNT(block_inode)>=MAX_BINODE_COUNT)
 				{
-          for (i=0;i<MAX_BINODE_COUNT/10; i++)
-          {
-					  HASH_ITER(hh,block_inode,temp_binode,temp)
-					  {
+				          for (i=0;i<MAX_BINODE_COUNT/10; i++)
+          				{
+					  	HASH_ITER(hh,block_inode,temp_binode,temp)
+					  	{
  						  HASH_DELETE(hh,block_inode,temp_binode);
 						  free(temp_binode);
 						  break;
-    				}
-          }
+    						}
+          				}
 					
 			
 				}
        
 				ret =  SUCCESS;
-        goto exit;
+        			goto exit;
 			}
 				
 			else
 			{
 				fprintf(stderr,"Memory allocation failure\n");		
 				ret = FAILURE;
-        goto exit;
+			        goto exit;
 			}
 
 exit:
@@ -341,12 +341,12 @@ exit:
 }
 
 
-int binode_cache_find(unsigned char *key,HASH_TABLE_INODE_N_BLOCK **temp_binode)
+int binode_cache_find(uint64_t key,HASH_TABLE_INODE_N_BLOCK **temp_binode)
 {
 clock_t start,end;
 int ret = 0;
 start=clock();
-HASH_FIND(hh, block_inode,key, 8, (*temp_binode));
+HASH_FIND(hh, block_inode,&key, 8, (*temp_binode));
 
 	if(*temp_binode) 
 	{
@@ -442,7 +442,8 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset,
 	int fd,status;
 	int res,found_index;
 	uint32_t block_num;
-	unsigned char key[8],hash_key[16], *data_block;
+	unsigned char hash_key[16], *data_block;
+	uint64_t key;
         struct stat stbuf;
 	clock_t start,end;
 #ifdef DEBUG_FUSEXMP
@@ -472,11 +473,10 @@ fclose(fp);
 	
 	lstat (path, &stbuf);
 	block_num = offset / 4096;
-        memcpy(key, &stbuf.st_ino, 4);
-        memcpy(key+4, &block_num,4);
+	key=(stbuf.st_ino<<32)|block_num;
 
 #ifdef DEBUG_FUXEXMP
-  fprintf(stderr, "check if block %u %u is present in table\n", *((uint32_t *)key),*((uint32_t *)(key+4)) );
+  fprintf(stderr, "check if block %u %u is present in table\n",block_num,stbuf.st_ino);
 #endif 
  
    //Check if block:inode is present in (block:inode,index) table]

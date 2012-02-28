@@ -4,7 +4,7 @@
 #define FAILURE 1
 typedef struct 
 {
-	unsigned char inode_block[8];
+	uint64_t inode_block;
 	unsigned char hash_key[16];
         UT_hash_handle hh;
 }HASH_TABLE_INODE_N_BLOCK;
