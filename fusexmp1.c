@@ -35,6 +35,21 @@
 #include <sys/xattr.h>
 #endif
 #include <libhashkit/hashkit.h>
+#include "btree.h"
+
+unsigned int value(void * key) {
+    return *((int *)key);
+}
+
+unsigned int keysize(void * key) {
+          return sizeof(int);
+}
+
+unsigned int datasize(void * data) {
+          return sizeof(int);
+}
+
+static btree *block_inode_tree;
 
 static double mem_add, mem_find, binode_add, binode_find;
 void libhashkit_md5_signature_wrap(const char *buf, int res, char *hash_key)
@@ -48,6 +63,10 @@ void *xmp_init(struct fuse_conn_info *conn)
   mem_find = 0;
   binode_add = 0;
   binode_find = 0;
+  block_inode_tree = btree_create(5);
+  block_inode_tree->value = value;
+  block_inode_tree->key_size = keysize;
+  block_inode_tree->data_size = datasize;
   return FUSEXMP_DATA;
 }
 
@@ -291,6 +310,14 @@ static int xmp_open(const char *path, struct fuse_file_info *fi)
 
 int binode_cache_add(uint64_t key, unsigned char *hash_key)
 {
+  bt_key_val *kv = NULL;
+
+  kv = malloc(sizeof(*kv));
+  kv->key = malloc(sizeof(int));
+  kv->val = malloc(sizeof(int));
+  btree_insert();
+  
+  
 HASH_TABLE_INODE_N_BLOCK *temp_binode=NULL,*temp;
 clock_t start,end;
 int ret = 0, i = 0;
