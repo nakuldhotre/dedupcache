@@ -147,21 +147,21 @@ static void btree_split_child(btree * btree, bt_node * parent,
 static void btree_insert_nonfull (btree * btree, bt_node * parent_node,
         bt_key_val * key_val) {
   
-  unsigned int key = btree->value(key_val->key);
+  uint64_t key = key_val->key;
   int i ;
   bt_node * child;  
   bt_node * node = parent_node;
 
 insert: i = node->nr_active - 1;
   if(node->leaf) {
-    while(i >= 0 && key < btree->value(node->key_vals[i]->key)) {
+    while(i >= 0 && key < node->key_vals[i]->key) {
       node->key_vals[i + 1] = node->key_vals[i];
       i--;
     }
     node->key_vals[i + 1] = key_val;
     node->nr_active++; 
   } else {
-    while (i >= 0 && key < btree->value(node->key_vals[i]->key)) {
+    while (i >= 0 && key < node->key_vals[i]->key) {
       i--;
     }
     i++;
@@ -169,8 +169,8 @@ insert: i = node->nr_active - 1;
     
     if(child->nr_active == 2*btree->order - 1) {
       btree_split_child(btree,node,i,child);  
-      if(btree->value(key_val->key) > 
-        btree->value(node->key_vals[i]->key)) {
+      if(key_val->key > 
+        node->key_vals[i]->key) {
         i++;  
       } 
     }
@@ -453,7 +453,7 @@ int delete_key_from_node(btree * btree, node_pos * node_pos) {
     node->key_vals[i] = node->key_vals[i + 1];  
   }
   
-  if(key_val->key) {
+/*  if(key_val->key) {
     mem_free(key_val->key);
                 key_val->key = NULL;
   }
@@ -461,7 +461,7 @@ int delete_key_from_node(btree * btree, node_pos * node_pos) {
   if(key_val->val) {
     mem_free(key_val->val);
                 key_val->val = NULL;
-  }
+  }*/
   
   node->nr_active--;
 
@@ -480,14 +480,14 @@ int delete_key_from_node(btree * btree, node_pos * node_pos) {
 *       @return success or failure
 */
 
-int btree_delete_key(btree * btree,bt_node * subtree,void * key) {
+int btree_delete_key(btree * btree,bt_node * subtree, uint64_t key) {
   unsigned int i,index;
   bt_node * node = NULL, * rsibling, *lsibling;
   bt_node * comb_node, * parent;
   node_pos sub_node_pos;
   node_pos node_pos;
   bt_key_val * key_val, * new_key_val;
-  unsigned int kv = btree->value(key);  
+  uint64_t kv = key;  
 
   node = subtree;
   parent = NULL;  
@@ -502,14 +502,14 @@ del_loop:for (i = 0;;i = 0) {
       // to the key that we would like to search
     
       while (i < node->nr_active && kv > 
-          btree->value(node->key_vals[i]->key) ) {
+          node->key_vals[i]->key)  {
         i++;
       }
       index = i;
 
       // If we find such key break        
       if(i < node->nr_active && 
-      kv == btree->value(node->key_vals[i]->key)) {
+      kv == node->key_vals[i]->key) {
       break;
       }
             if(node->leaf)
@@ -651,10 +651,11 @@ del_loop:for (i = 0;;i = 0) {
 */
 node_pos  get_btree_node(btree * btree,void * key) {
   node_pos kp;
-  unsigned int key_val = btree->value(key); 
+  uint64_t key_val = *(uint64_t *)key; 
   bt_node * node;
   unsigned int i = 0;
 
+  kp.node = NULL;
   node = btree->root;
 
     
@@ -664,13 +665,13 @@ node_pos  get_btree_node(btree * btree,void * key) {
       // to the key that we would like to search
     
       while (i < node->nr_active && key_val > 
-          btree->value(node->key_vals[i]->key) ) {
+          node->key_vals[i]->key)  {
         i++;
       }
 
       // If we find such key return the key-value pair        
       if(i < node->nr_active && 
-      key_val == btree->value(node->key_vals[i]->key)) {
+      key_val == node->key_vals[i]->key) {
         kp.node = node;
         kp.index = i; 
         return kp;
@@ -756,15 +757,9 @@ static void copy_key_val(btree * btree, bt_key_val * src, bt_key_val * dst) {
         unsigned int keysize;
         unsigned int datasize;
 
-        keysize    = btree->key_size(src->key);
-        dst->key        = (void *)mem_alloc(keysize);
-        bcopy(src->key,dst->key,keysize);
+        dst->key = src->key;
         
-        if(src->val) {
-                datasize   = btree->data_size(src->val);
-                dst->val       = (void *)mem_alloc(datasize);
-                bcopy(src->val,dst->val,datasize);
-        }                
+        dst->val = src->val,dst->val;
         
 }
 
@@ -773,7 +768,7 @@ static void copy_key_val(btree * btree, bt_key_val * src, bt_key_val * dst) {
 * @param btree The btree
 * @return The max key 
 */
-void * btree_get_max_key(btree * btree) {
+uint64_t btree_get_max_key(btree * btree) {
   node_pos node_pos;
   node_pos = get_max_key_pos(btree,btree->root);
   return node_pos.node->key_vals[node_pos.index]->key;
@@ -784,7 +779,7 @@ void * btree_get_max_key(btree * btree) {
 * @param btree The btree
 * @return The max key 
 */
-void * btree_get_min_key(btree * btree) {
+uint64_t btree_get_min_key(btree * btree) {
   node_pos node_pos;
   node_pos = get_min_key_pos(btree,btree->root);
   return node_pos.node->key_vals[node_pos.index]->key;
@@ -804,7 +799,7 @@ static void print_single_node(btree *btree, bt_node * node) {
   
   print(" { "); 
   while(i < node->nr_active) {
-    print("k %lu v %lu (%d) ", btree->value(node->key_vals[i]->key), btree->value(node->key_vals[i]->val),
+    print("k %llx v %llx (%d) ", node->key_vals[i]->key, node->key_vals[i]->val,
       node->level);
     i++;
   }

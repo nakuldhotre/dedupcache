@@ -55,11 +55,11 @@ datasize (void *data)
   return sizeof (uint64_t);
 }
 
-static btree *block_inode_tree;
+static btree *block_inode_tree,*memory_tree;
 
 static double mem_add, mem_find, binode_add, binode_find;
 void
-libhashkit_md5_signature_wrap (const char *buf, int res, char *hash_key)
+libhashkit_md5_signature_wrap (const char *buf, int res, unsigned char *hash_key)
 {
   libhashkit_md5_signature (buf, res, hash_key);
 }
@@ -71,10 +71,16 @@ xmp_init (struct fuse_conn_info *conn)
   mem_find = 0;
   binode_add = 0;
   binode_find = 0;
-  block_inode_tree = btree_create (5);
+  block_inode_tree = btree_create (3);
   block_inode_tree->value = value;
   block_inode_tree->key_size = keysize;
   block_inode_tree->data_size = datasize;
+
+
+  memory_tree = btree_create (3);
+  memory_tree->value = value;
+  memory_tree->key_size = keysize;
+  memory_tree->data_size = datasize;
   return FUSEXMP_DATA;
 }
 
@@ -340,88 +346,53 @@ xmp_open (const char *path, struct fuse_file_info *fi)
 int
 binode_cache_add (uint64_t key, unsigned char *hash_key)
 {
-  HASH_TABLE_INODE_N_BLOCK *temp_binode = NULL, *temp;
   clock_t start, end;
   int ret = 0, i = 0;
   uint64_t val = 0;
+  uint32_t temp_hash;
 
   bt_key_val *kv = NULL;
 
-  kv = malloc (sizeof (*kv));
-  kv->key = malloc (sizeof (uint64_t));
-  kv->val = malloc (sizeof (uint64_t));
+  kv = malloc (sizeof (bt_key_val));
 
-  val = libhashkit_murmur(hash_key,16);
-  *(uint64_t *)kv->key = key;
-  *(uint64_t *)kv->val = libhashkit_murmur(hash_key,16);
-  
-  fprintf(stderr, "key = %lu val = %lu\n", key, val); 
+  kv->key = key;
+  kv->val = 0;
+  kv->val = (uint64_t)libhashkit_murmur(hash_key,16);
+
+  temp_hash = libhashkit_murmur(hash_key,16);
+#ifdef DEBUG_FUXEXMP
+  fprintf(stderr, "binode_cache_add: k %llx v %llx hash %lx\n",*(uint64_t *)kv->key,*(uint64_t *)kv->val,temp_hash);
+#endif
   btree_insert_key(block_inode_tree, kv);
-print_subtree(block_inode_tree,block_inode_tree->root);
-
-  start = clock ();
-
-  temp_binode =
-    (HASH_TABLE_INODE_N_BLOCK *) malloc (sizeof (HASH_TABLE_INODE_N_BLOCK));
-  mlock (temp_binode, sizeof (HASH_TABLE_INODE_N_BLOCK));
-  if (temp_binode)
-    {
-      temp_binode->inode_block = key;
-      memcpy (temp_binode->hash_key, hash_key, 16);
-      HASH_ADD (hh, block_inode, inode_block, 8, temp_binode);
-
-      if (HASH_COUNT (block_inode) >= MAX_BINODE_COUNT)
-        {
-          for (i = 0; i < MAX_BINODE_COUNT / 10; i++)
-            {
-              HASH_ITER (hh, block_inode, temp_binode, temp)
-              {
-                HASH_DELETE (hh, block_inode, temp_binode);
-                free (temp_binode);
-                break;
-              }
-            }
-
-
-        }
-
-      ret = SUCCESS;
-      goto exit;
-    }
-
-  else
-    {
-      fprintf (stderr, "Memory allocation failure\n");
-      ret = FAILURE;
-      goto exit;
-    }
-
-exit:
-
-  end = clock ();
-  binode_add += ((double) (end - start)) / CLOCKS_PER_SEC;
   return ret;
 
 }
 
 
 int
-binode_cache_find (uint64_t key, HASH_TABLE_INODE_N_BLOCK ** temp_binode)
+binode_cache_find (uint64_t key, bt_key_val ** temp_binode)
 {
   clock_t start, end;
   int ret = 0;
+  bt_key_val *kv=NULL;
 
   start = clock ();
-  HASH_FIND (hh, block_inode, &key, 8, (*temp_binode));
+#ifdef DEBUG_FUXEXMP
+  fprintf(stderr, "binode_cache_find: key = %llx\n", key);
+  print_subtree(block_inode_tree, block_inode_tree->root);
+#endif
+  kv = btree_search(block_inode_tree,&key);
 
-  if (*temp_binode)
-    {
-      HASH_DELETE (hh, block_inode, (*temp_binode));
-      HASH_ADD (hh, block_inode, inode_block, 8, (*temp_binode));
-      ret = SUCCESS;
-    }
+  if (kv != NULL)
+  {
+    *temp_binode = kv;
+    ret = SUCCESS;
+  }
   else
+  {
+    *temp_binode = NULL;
     ret = FAILURE;
+  }
 
   end = clock ();
   binode_find += ((double) (end - start)) / CLOCKS_PER_SEC;
@@ -431,45 +402,28 @@ binode_cache_find (uint64_t key, HASH_TABLE_INODE_N_BLOCK ** temp_binode)
 int
 memory_cache_add (unsigned char *hash_key, unsigned char *data, int size)
 {
-  HASH_TABLE_MEMORY_CACHE *temp_memory = NULL, *temp;
   unsigned char *data_block = NULL;
   clock_t start, end;
   int ret = 0, i;
+  uint64_t val = 0;
+  unsigned char temp_md5_hash[16];
+
+  bt_key_val *kv = NULL;
+
+  kv = malloc (sizeof (bt_key_val));
+
+  kv->key = libhashkit_murmur(hash_key,16);
+  kv->val = 0;
+
 
   start = clock ();
-  temp_memory =
-    (HASH_TABLE_MEMORY_CACHE *) malloc (sizeof (HASH_TABLE_MEMORY_CACHE));
   data_block = malloc (4096);
-  mlock (temp_memory, sizeof (HASH_TABLE_MEMORY_CACHE));
-  mlock (data_block, 4096);
-  if (temp_memory)
-    {
-      memcpy (temp_memory->hash_key, hash_key, 16);
-      temp_memory->data_block = data_block;
-      memcpy (temp_memory->data_block, data, size);
-      HASH_ADD (hh, memory, hash_key, 16, temp_memory);
-      if (HASH_COUNT (memory) >= MAX_MEMORY_COUNT)
-        {
-          for (i = 0; i < MAX_MEMORY_COUNT / 10; i++)
-            {
-              HASH_ITER (hh, memory, temp_memory, temp)
-              {
-                HASH_DELETE (hh, memory, temp_memory);
-                free (temp_memory->data_block);
-                free (temp_memory);
-                break;
-              }
-            }
-        }
-      ret = SUCCESS;
-      goto exit;
-    }
-  else
-    {
-      fprintf (stderr, "Memory allocation failure\n");
-      ret = FAILURE;
-      goto exit;
-    }
+  kv->val = (uint64_t)data_block;
+  memcpy (data_block, data, size);
+  
+  libhashkit_md5_signature_wrap(data_block,size,temp_md5_hash);
+
+  btree_insert_key(memory_tree,kv);
 exit:
   end = clock ();
   mem_add += ((double) (end - start)) / CLOCKS_PER_SEC;
@@ -477,30 +431,28 @@ exit:
 }
 
 int
-memory_cache_find (char *hash_key, HASH_TABLE_MEMORY_CACHE ** temp_memory)
+memory_cache_find (uint64_t hash_key, bt_key_val ** temp_memory)
 {
 
   clock_t start, end;
   int ret = 0;
+  bt_key_val *kv=NULL;
 
   start = clock ();
+  kv = btree_search(memory_tree,&hash_key);
 
-  HASH_FIND (hh, memory, hash_key, 16, (*temp_memory));
+  if (kv != NULL)
+  {
+    *temp_memory = kv;
 
-  if ((*temp_memory))
-    {
-      HASH_DELETE (hh, memory, (*temp_memory));
-      HASH_ADD (hh, memory, hash_key, 16, (*temp_memory));
-      ret = SUCCESS;
-      goto exit;
-    }
-
+    ret = SUCCESS;
+  }
   else
-    {
-      ret = FAILURE;
-      goto exit;
-    }
-exit:
+  {
+    *temp_memory = NULL;
+    ret = FAILURE;
+  }
+
   end = clock ();
   mem_find += ((double) (end - start)) / CLOCKS_PER_SEC;
   return ret;
@@ -511,30 +463,20 @@ static int
 xmp_read (const char *path, char *buf, size_t size, off_t offset,
           struct fuse_file_info *fi)
 {
-  int fd, status;
+  int fd, status,i;
   int res, found_index;
   uint32_t block_num;
-  unsigned char hash_key[16], *data_block;
-  uint64_t key;
+  unsigned char hash_key[16], *data_block,temp_md5_hash[16];
+  uint64_t key,hash_temp;
   struct stat stbuf;
   clock_t start, end;
 
-#ifdef DEBUG_FUSEXMP
-  FILE *fp = fopen ("/home/ranjan/stats", "r");
-#endif
   STATS case_1, case_2, case_3, case_4;
 
-#ifdef DEBUG_FUXEXMP
-  fscanf (fp, "%d", &case_1.count);
-  fscanf (fp, "%d", &case_2.count);
-  fscanf (fp, "%d", &case_3.count);
-  fscanf (fp, "%d", &case_4.count);
-  fclose (fp);
-#endif
-  start = clock ();
-  HASH_TABLE_INODE_N_BLOCK *temp_binode1 = NULL;
-  HASH_TABLE_MEMORY_CACHE *temp_memory1 = NULL;
+  bt_key_val *temp_binode1 = NULL;
+  bt_key_val *temp_memory1 = NULL;
 
+  start = clock ();
 #ifdef DEBUG_FUXEXMP
   fprintf (stderr, "Reading...\n");
   fprintf (stderr, "binode size = %d cache size = %d\n",
@@ -549,15 +491,9 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
   lstat64 (path, &stbuf);
   block_num = offset / 4096;
   key = stbuf.st_ino;
-  fprintf(stderr, "inode = %u\n", stbuf.st_ino);
   key = key<<32;
   key = key + block_num;
 
-  fprintf(stderr, "file = %s key = %lu\n", path, key);
-
-
-  fprintf (stderr, "check if block %u %u is present in table\n",
-           stbuf.st_ino, block_num);
 
 
   //Check if block:inode is present in (block:inode,index) table]
@@ -568,10 +504,10 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
 
   if (status == SUCCESS)        //If found, just copy the data from (md5,index) table to buffer 
     {
-      status = memory_cache_find (temp_binode1->hash_key, &temp_memory1);
+      status = memory_cache_find (temp_binode1->val, &temp_memory1);
       if (status == SUCCESS)
         {
-          memcpy (buf, temp_memory1->data_block, size);
+          memcpy (buf, (void *)temp_memory1->val, size);
           res = size;
 #ifdef DEBUG_FUXEXMP
           fprintf (stderr, "Found in cache_mem !\n");
@@ -618,7 +554,8 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
         goto end;
       //Use md5 as key to check if the read block is already in cache
       libhashkit_md5_signature_wrap (buf, res, hash_key);
-      status = memory_cache_find (hash_key, &temp_memory1);
+      hash_temp = libhashkit_murmur(hash_key,16);
+      status = memory_cache_find (hash_temp, &temp_memory1);
 #ifdef DEBUG_FUXEXMP
       fprintf (stderr, "memory_cache_find status = %d\n", status);
 #endif
@@ -655,14 +592,6 @@ end:
 
   end = clock ();
   close (fd);
-#ifdef DEBUG_FUXEXMP
-  fp = fopen ("/home/ranjan/stats", "w");
-  fprintf (fp, "%d\n", case_1.count);
-  fprintf (fp, "%d\n", case_2.count);
-  fprintf (fp, "%d\n", case_3.count);
-  fprintf (fp, "%d\n", case_4.count);
-  fclose (fp);
-#endif
   return res;
 }
 

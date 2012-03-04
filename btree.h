@@ -15,8 +15,8 @@
 typedef enum  {False,True} Bool;
 
 typedef struct {
-        void * key;
-        void * val;
+        uint64_t key;
+        uint64_t val;
 } bt_key_val;
 
 typedef struct bt_node {
@@ -39,11 +39,11 @@ typedef struct {
 
 extern btree * btree_create(unsigned int order);
 extern int btree_insert_key(btree * btree, bt_key_val * key_val);
-extern int btree_delete_key(btree * btree,bt_node * subtree ,void * key);
+extern int btree_delete_key(btree * btree,bt_node * subtree ,uint64_t key);
 extern bt_key_val * btree_search(btree * btree,  void * key);
 extern void btree_destroy(btree * btree);
-extern void * btree_get_max_key(btree * btree);
-extern void * btree_get_min_key(btree * btree);
+extern uint64_t btree_get_max_key(btree * btree);
+extern uint64_t btree_get_min_key(btree * btree);
 
 #ifdef DEBUG
 extern void print_subtree(btree * btree,bt_node * node);
