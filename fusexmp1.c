@@ -56,6 +56,7 @@ datasize (void *data)
 }
 
 static btree *block_inode_tree,*memory_tree;
+LINKED *binode_list=NULL,*memory_list=NULL;
 
 static double mem_add, mem_find, binode_add, binode_find;
 void
@@ -350,20 +351,53 @@ binode_cache_add (uint64_t key, unsigned char *hash_key)
   int ret = 0, i = 0;
   uint64_t val = 0;
   uint32_t temp_hash;
-
+  LINKED *temp;
   bt_key_val *kv = NULL;
+
+if(count_block_inode>MAX_BINODE_COUNT)
+{
+  temp=binode_list;
+
+  while(temp->next)
+  temp=temp->next;
+  
+  btree_delete_key(block_inode_tree,block_inode_tree->root,*(uint32_t *)temp->kv->key);
+  temp->prev->next=NULL;
+  free(temp);
+  count_block_inode--; 
+}
+
+  if(binode_list==NULL)
+{
+   binode_list=malloc(sizeof(LINKED));
+   binode_list->prev=NULL;	
+   binode_list->next=NULL;	
+   temp=binode_list;
+}
+
+else
+{
+  temp=malloc(sizeof(LINKED));
+  temp->prev=NULL;
+  temp->next=binode_list;
+  temp->kv=kv; 
+  binode_list=temp;
+}
 
   kv = malloc (sizeof (bt_key_val));
 
   kv->key = key;
   kv->val = 0;
   kv->val = (uint64_t)libhashkit_murmur(hash_key,16);
-
+  kv->pt=temp;
+  temp->kv=kv;
   temp_hash = libhashkit_murmur(hash_key,16);
 #ifdef DEBUG_FUXEXMP
   fprintf(stderr, "binode_cache_add: k %llx v %llx hash %lx\n",*(uint64_t *)kv->key,*(uint64_t *)kv->val,temp_hash);
 #endif
   btree_insert_key(block_inode_tree, kv);
+
+	
   return ret;
 
 }
@@ -373,7 +407,8 @@ int
 binode_cache_find (uint64_t key, bt_key_val ** temp_binode)
 {
   clock_t start, end;
-  int ret = 0;
+  int ret = 0; 
+  LINKED *temp;
   bt_key_val *kv=NULL;
 
   start = clock ();
@@ -387,6 +422,14 @@ binode_cache_find (uint64_t key, bt_key_val ** temp_binode)
   {
     *temp_binode = kv;
     ret = SUCCESS;
+    temp=kv->pt;
+    
+    temp->next->prev=temp->prev;
+    temp->prev->next=temp->next;
+
+    temp->next=binode_list;
+    temp->prev=NULL;
+    binode_list=temp;
   }
   else
   {
@@ -407,9 +450,38 @@ memory_cache_add (unsigned char *hash_key, unsigned char *data, int size)
   int ret = 0, i;
   uint64_t val = 0;
   unsigned char temp_md5_hash[16];
+  LINKED *temp;
+
+if(count_memory_cache>MAX_MEMORY_COUNT)
+{
+  temp=memory_list;
+
+  while(temp->next)
+  temp=temp->next;
+  
+  btree_delete_key(memory_tree,memory_tree->root,*(uint32_t *)temp->kv->key);
+  temp->prev->next=NULL;
+  free(temp);
+  count_memory_cache--; 
+}
 
   bt_key_val *kv = NULL;
 
+if(memory_list==NULL)
+{
+   memory_list=malloc(sizeof(LINKED));
+   memory_list->prev=NULL;	
+   memory_list->next=NULL;	
+   temp=memory_list;
+}
+
+else
+{
+  temp=malloc(sizeof(LINKED));
+  temp->prev=NULL;
+  temp->next=memory_list;
+  memory_list=temp;
+}
   kv = malloc (sizeof (bt_key_val));
 
   kv->key = libhashkit_murmur(hash_key,16);
@@ -420,13 +492,16 @@ memory_cache_add (unsigned char *hash_key, unsigned char *data, int size)
   data_block = malloc (4096);
   kv->val = (uint64_t)data_block;
   memcpy (data_block, data, size);
-  
+  kv->pt=temp;
+  temp->kv=kv; 
   libhashkit_md5_signature_wrap(data_block,size,temp_md5_hash);
 
   btree_insert_key(memory_tree,kv);
 exit:
   end = clock ();
   mem_add += ((double) (end - start)) / CLOCKS_PER_SEC;
+
+   count_memory_cache++;
   return ret;
 }
 
@@ -437,7 +512,7 @@ memory_cache_find (uint64_t hash_key, bt_key_val ** temp_memory)
   clock_t start, end;
   int ret = 0;
   bt_key_val *kv=NULL;
-
+  LINKED *temp;
   start = clock ();
   kv = btree_search(memory_tree,&hash_key);
 
@@ -446,6 +521,14 @@ memory_cache_find (uint64_t hash_key, bt_key_val ** temp_memory)
     *temp_memory = kv;
 
     ret = SUCCESS;
+   temp=kv->pt;
+    
+    temp->next->prev=temp->prev;
+    temp->prev->next=temp->next;
+
+    temp->next=memory_list;
+    temp->prev=NULL;
+    memory_list=temp;
   }
   else
   {
@@ -525,7 +608,7 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
           if (res < 4096)
             goto end;
           //Adding a new entry into (hash,data blocks) table
-          status = memory_cache_add (hash_key, buf, res);
+          status = memory_cache_add (temp_binode1->val, buf, res);
           if (status)
             goto end;
           case2++;
@@ -582,6 +665,7 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
           status = binode_cache_add (key, hash_key);
           if (status)
             goto end;
+          count_block_inode++;
           case4++;
         }
     }
