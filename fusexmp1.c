@@ -467,7 +467,7 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
   int res, found_index;
   uint32_t block_num;
   unsigned char hash_key[16], *data_block,temp_md5_hash[16];
-  uint64_t key,hash_temp;
+  uint64_t key,hash_temp,key1;
   struct stat stbuf;
   clock_t start, end;
 
@@ -494,7 +494,8 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
   key = key<<32;
   key = key + block_num;
 
-
+  key1 = libhashkit_murmur((unsigned char *)&key, 8);
+  key = key1;
 
   //Check if block:inode is present in (block:inode,index) table]
   status = binode_cache_find (key, &temp_binode1);
