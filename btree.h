@@ -24,7 +24,7 @@ typedef struct bt_node {
   Bool leaf;      // Used to indicate whether leaf or not
         unsigned int nr_active;   // Number of active keys
   unsigned int level;   // Level in the B-Tree
-        bt_key_val ** key_vals;   // Array of keys and values
+        bt_key_val * key_vals;   // Array of keys and values
         struct bt_node ** children; // Array of pointers to child nodes
 }bt_node;
 
@@ -38,9 +38,9 @@ typedef struct {
 }btree; 
 
 extern btree * btree_create(unsigned int order);
-extern int btree_insert_key(btree * btree, bt_key_val * key_val);
+extern int btree_insert_key(btree * btree, bt_key_val key_val);
 extern int btree_delete_key(btree * btree,bt_node * subtree ,uint64_t key);
-extern bt_key_val * btree_search(btree * btree,  void * key);
+extern bt_key_val btree_search(btree * btree,  uint64_t key);
 extern void btree_destroy(btree * btree);
 extern uint64_t btree_get_max_key(btree * btree);
 extern uint64_t btree_get_min_key(btree * btree);

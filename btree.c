@@ -11,16 +11,16 @@ static void print_single_node(btree *btree, bt_node * node);
 static bt_node * allocate_btree_node (unsigned int order);
 static int free_btree_node (bt_node * node);
 
-static node_pos get_btree_node(btree * btree,void * key);
+static node_pos get_btree_node(btree * btree,uint64_t key);
 
 static int delete_key_from_node(btree * btree, node_pos * node_pos);
-static bt_node * merge_nodes(btree * btree, bt_node * n1, bt_key_val * kv ,bt_node * n2);
+static bt_node * merge_nodes(btree * btree, bt_node * n1, bt_key_val kv ,bt_node * n2);
 static void move_key(btree * btree, bt_node * node, unsigned int index, position_t pos);
 static node_pos get_max_key_pos(btree * btree, bt_node * subtree);
 static node_pos get_min_key_pos(btree * btree, bt_node * subtree);
 static bt_node * merge_siblings(btree * btree, bt_node * parent,unsigned int index,
           position_t pos);
-static void copy_key_val(btree * btree,bt_key_val * src, bt_key_val * dst);
+static void copy_key_val(btree * btree,bt_key_val *src, bt_key_val *dst);
 
 /**
 * Used to create a btree with just the root node
@@ -55,7 +55,7 @@ static bt_node * allocate_btree_node (unsigned int order) {
         node->nr_active = 0;
 
         // Initialize the keys
-        node->key_vals = (bt_key_val **)mem_alloc(2*order*sizeof(bt_key_val*) - 1);
+        node->key_vals = (bt_key_val *)mem_alloc(2*order*sizeof(bt_key_val) - 1);
         
         // Initialize the child pointers
         node->children = (bt_node **)mem_alloc(2*order*sizeof(bt_node*));
@@ -145,23 +145,23 @@ static void btree_split_child(btree * btree, bt_node * parent,
 */
 
 static void btree_insert_nonfull (btree * btree, bt_node * parent_node,
-        bt_key_val * key_val) {
+        bt_key_val  key_val) {
   
-  uint64_t key = key_val->key;
+  uint64_t key = key_val.key;
   int i ;
   bt_node * child;  
   bt_node * node = parent_node;
 
 insert: i = node->nr_active - 1;
   if(node->leaf) {
-    while(i >= 0 && key < node->key_vals[i]->key) {
+    while(i >= 0 && key < node->key_vals[i].key) {
       node->key_vals[i + 1] = node->key_vals[i];
       i--;
     }
     node->key_vals[i + 1] = key_val;
     node->nr_active++; 
   } else {
-    while (i >= 0 && key < node->key_vals[i]->key) {
+    while (i >= 0 && key < node->key_vals[i].key) {
       i--;
     }
     i++;
@@ -169,8 +169,8 @@ insert: i = node->nr_active - 1;
     
     if(child->nr_active == 2*btree->order - 1) {
       btree_split_child(btree,node,i,child);  
-      if(key_val->key > 
-        node->key_vals[i]->key) {
+      if(key_val.key > 
+        node->key_vals[i].key) {
         i++;  
       } 
     }
@@ -187,7 +187,7 @@ insert: i = node->nr_active - 1;
 *       @param compare Function used to compare the two nodes of the tree
 *       @return success or failure
 */
-int btree_insert_key(btree * btree, bt_key_val * key_val) {
+int btree_insert_key(btree * btree, bt_key_val  key_val) {
   bt_node * rnode;
 
   rnode = btree->root;
@@ -315,9 +315,9 @@ static bt_node * merge_siblings(btree * btree, bt_node * parent, unsigned int in
   new_node->nr_active = n1->nr_active + n2->nr_active + 1;
   parent->nr_active--;
 
-  for(i=parent->nr_active;i < 2*btree->order - 1; i++) {
-    parent->key_vals[i] = NULL; 
-  }
+//  for(i=parent->nr_active;i < 2*btree->order - 1; i++) {
+//    parent->key_vals[i] = (bt_key_val)0; 
+//  }
 
   free_btree_node(n1);
   free_btree_node(n2);
@@ -361,7 +361,7 @@ static void move_key(btree * btree, bt_node * node, unsigned int index, position
     lchild->nr_active++;
 
     node->key_vals[index] = rchild->key_vals[0];
-    rchild->key_vals[0] = NULL;
+    //rchild->key_vals[0] = NULL;
 
     for(i=0;i<rchild->nr_active - 1;i++) {
       rchild->key_vals[i] = rchild->key_vals[i + 1];
@@ -385,7 +385,7 @@ static void move_key(btree * btree, bt_node * node, unsigned int index, position
     lchild->children[lchild->nr_active] = NULL;
 
     node->key_vals[index] = lchild->key_vals[lchild->nr_active - 1];
-    lchild->key_vals[lchild->nr_active - 1] = NULL;
+    //lchild->key_vals[lchild->nr_active - 1] = NULL;
       
     lchild->nr_active--;
     rchild->nr_active++;    
@@ -398,7 +398,7 @@ static void move_key(btree * btree, bt_node * node, unsigned int index, position
 * @param n2 Second node
 * @return combined node
 */
-static bt_node * merge_nodes(btree * btree, bt_node * n1, bt_key_val * kv,
+static bt_node * merge_nodes(btree * btree, bt_node * n1, bt_key_val  kv,
                                                 bt_node * n2) {
   bt_node * new_node;
   unsigned int i; 
@@ -440,7 +440,7 @@ static bt_node * merge_nodes(btree * btree, bt_node * n1, bt_key_val * kv,
 int delete_key_from_node(btree * btree, node_pos * node_pos) {
   unsigned int keys_max = 2*btree->order - 1;
   unsigned int i;
-  bt_key_val * key_val;
+  bt_key_val  key_val;
   bt_node * node = node_pos->node;
 
   if(node->leaf == False) {
@@ -486,7 +486,7 @@ int btree_delete_key(btree * btree,bt_node * subtree, uint64_t key) {
   bt_node * comb_node, * parent;
   node_pos sub_node_pos;
   node_pos node_pos;
-  bt_key_val * key_val, * new_key_val;
+  bt_key_val key_val,new_key_val;
   uint64_t kv = key;  
 
   node = subtree;
@@ -502,14 +502,14 @@ del_loop:for (i = 0;;i = 0) {
       // to the key that we would like to search
     
       while (i < node->nr_active && kv > 
-          node->key_vals[i]->key)  {
+          node->key_vals[i].key)  {
         i++;
       }
       index = i;
 
       // If we find such key break        
       if(i < node->nr_active && 
-      kv == node->key_vals[i]->key) {
+      kv == node->key_vals[i].key) {
       break;
       }
             if(node->leaf)
@@ -584,11 +584,11 @@ del_loop:for (i = 0;;i = 0) {
       sub_node_pos = get_max_key_pos(btree,node->children[index]);
                         key_val = sub_node_pos.node->key_vals[sub_node_pos.index];
 
-                        new_key_val = (bt_key_val *)mem_alloc(sizeof(bt_key_val));
-                        copy_key_val(btree,key_val,new_key_val);
+                        //new_key_val = (bt_key_val *)mem_alloc(sizeof(bt_key_val));
+                        copy_key_val(btree,&key_val,&new_key_val);
             node->key_vals[index] = new_key_val;  
                
-                        btree_delete_key(btree,node->children[index],key_val->key);
+                        btree_delete_key(btree,node->children[index],key_val.key);
       if(sub_node_pos.node->leaf == False) {
                                 print("Not leaf\n");
                         }
@@ -597,11 +597,11 @@ del_loop:for (i = 0;;i = 0) {
                                 get_min_key_pos(btree,node->children[index + 1]);
                         key_val = sub_node_pos.node->key_vals[sub_node_pos.index];
 
-                        new_key_val = (bt_key_val *)mem_alloc(sizeof(bt_key_val));
-                        copy_key_val(btree,key_val,new_key_val);
+                        //new_key_val = (bt_key_val *)mem_alloc(sizeof(bt_key_val));
+                        copy_key_val(btree,&key_val,&new_key_val);
             node->key_vals[index] = new_key_val;  
                
-                        btree_delete_key(btree,node->children[index + 1],key_val->key);
+                        btree_delete_key(btree,node->children[index + 1],key_val.key);
       if(sub_node_pos.node->leaf == False) {
                                 print("Not leaf\n");
                         }
@@ -649,12 +649,13 @@ del_loop:for (i = 0;;i = 0) {
 * @param key The the key to be searched
 * @return The node and position of the key within the node 
 */
-node_pos  get_btree_node(btree * btree,void * key) {
+node_pos  get_btree_node(btree * btree, uint64_t key) {
   node_pos kp;
-  uint64_t key_val = *(uint64_t *)key; 
+  uint64_t key_val = key; 
   bt_node * node;
   unsigned int i = 0;
-
+  static k=0,j=0;
+  k++;
   kp.node = NULL;
   node = btree->root;
 
@@ -665,15 +666,20 @@ node_pos  get_btree_node(btree * btree,void * key) {
       // to the key that we would like to search
     
       while (i < node->nr_active && key_val > 
-          node->key_vals[i]->key)  {
-        i++;
+          node->key_vals[i].key)  {
+        i++; j++;
       }
 
       // If we find such key return the key-value pair        
       if(i < node->nr_active && 
-      key_val == node->key_vals[i]->key) {
+      key_val == node->key_vals[i].key) {
         kp.node = node;
         kp.index = i; 
+        j++;
+#ifdef DEBUG
+        if ((k+1)%100 == 0)
+          fprintf(stdout, "get_btree_node: avg search calls = %d\n", j/k);
+#endif
         return kp;
       }
   
@@ -736,9 +742,12 @@ void btree_destroy(btree * btree) {
 *       @param key Key of the node to be search
 *       @return The key-value pair
 */
-bt_key_val * btree_search(btree * btree,void * key) {
+bt_key_val btree_search(btree * btree, uint64_t key) {
 
-  bt_key_val * key_val = NULL;
+  bt_key_val key_val;
+  key_val.key = 0;
+  key_val.val = 0;
+
   node_pos kp = get_btree_node(btree,key);
 
   if(kp.node) {
@@ -753,13 +762,13 @@ bt_key_val * btree_search(btree * btree,void * key) {
 *       @param dst The dest key value
 *       @return none
 */
-static void copy_key_val(btree * btree, bt_key_val * src, bt_key_val * dst) {
+static void copy_key_val(btree * btree, bt_key_val  *src, bt_key_val  *dst) {
         unsigned int keysize;
         unsigned int datasize;
 
         dst->key = src->key;
         
-        dst->val = src->val,dst->val;
+        dst->val = src->val;
         
 }
 
@@ -771,7 +780,7 @@ static void copy_key_val(btree * btree, bt_key_val * src, bt_key_val * dst) {
 uint64_t btree_get_max_key(btree * btree) {
   node_pos node_pos;
   node_pos = get_max_key_pos(btree,btree->root);
-  return node_pos.node->key_vals[node_pos.index]->key;
+  return node_pos.node->key_vals[node_pos.index].key;
 }
 
 /**
@@ -782,7 +791,7 @@ uint64_t btree_get_max_key(btree * btree) {
 uint64_t btree_get_min_key(btree * btree) {
   node_pos node_pos;
   node_pos = get_min_key_pos(btree,btree->root);
-  return node_pos.node->key_vals[node_pos.index]->key;
+  return node_pos.node->key_vals[node_pos.index].key;
 }
 
 #ifdef DEBUG
@@ -799,7 +808,7 @@ static void print_single_node(btree *btree, bt_node * node) {
   
   print(" { "); 
   while(i < node->nr_active) {
-    print("k %llx v %llx (%d) ", node->key_vals[i]->key, node->key_vals[i]->val,
+    print("k %llx v %llx (%d) ", node->key_vals[i].key, node->key_vals[i].val,
       node->level);
     i++;
   }
