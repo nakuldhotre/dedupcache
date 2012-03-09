@@ -361,7 +361,8 @@ if(count_block_inode>MAX_BINODE_COUNT)
   while(temp->next)
   temp=temp->next;
   
-  btree_delete_key(block_inode_tree,block_inode_tree->root,*(uint32_t *)temp->kv->key);
+  btree_delete_key(block_inode_tree,block_inode_tree->root,temp->kv->key);
+  if(temp->prev)
   temp->prev->next=NULL;
   free(temp);
   count_block_inode--; 
@@ -393,7 +394,9 @@ else
   temp->kv=kv;
   temp_hash = libhashkit_murmur(hash_key,16);
 #ifdef DEBUG_FUXEXMP
-  fprintf(stderr, "binode_cache_add: k %llx v %llx hash %lx\n",*(uint64_t *)kv->key,*(uint64_t *)kv->val,temp_hash);
+  if(key==NULL)
+  fprintf(stderr,"key is null\n");
+//  fprintf(stderr, "binode_cache_add: k %llx v %llx hash %lx\n",*(uint64_t *)kv->key,*(uint64_t *)kv->val,temp_hash);
 #endif
   btree_insert_key(block_inode_tree, kv);
 
@@ -424,12 +427,26 @@ binode_cache_find (uint64_t key, bt_key_val ** temp_binode)
     ret = SUCCESS;
     temp=kv->pt;
     
-    temp->next->prev=temp->prev;
-    temp->prev->next=temp->next;
+    if(temp->prev==NULL);
+    else if(temp->next==NULL)
+    {
+      temp->prev->next=NULL;
+      temp->prev=NULL;
+      temp->next=binode_list;
+      binode_list->prev=temp;
+      binode_list=temp;  
+    }
+    else
+     {
+      temp->prev->next=temp->next;
+      temp->next->prev=temp->prev;
+      temp->prev=NULL;
+      temp->next=binode_list;
+      binode_list->prev=temp;
+      binode_list=temp;
+    }
+    
 
-    temp->next=binode_list;
-    temp->prev=NULL;
-    binode_list=temp;
   }
   else
   {
@@ -459,7 +476,8 @@ if(count_memory_cache>MAX_MEMORY_COUNT)
   while(temp->next)
   temp=temp->next;
   
-  btree_delete_key(memory_tree,memory_tree->root,*(uint32_t *)temp->kv->key);
+  btree_delete_key(memory_tree,memory_tree->root,temp->kv->key);
+ if(temp->prev)
   temp->prev->next=NULL;
   free(temp);
   count_memory_cache--; 
@@ -522,13 +540,25 @@ memory_cache_find (uint64_t hash_key, bt_key_val ** temp_memory)
 
     ret = SUCCESS;
    temp=kv->pt;
+    if(temp->prev==NULL);
+    else if(temp->next==NULL)
+    {
+      temp->prev->next=NULL;
+      temp->prev=NULL;
+      temp->next=binode_list;
+      binode_list->prev=temp;
+      binode_list=temp;  
+    }
+    else
+     {
+      temp->prev->next=temp->next;
+      temp->next->prev=temp->prev;
+      temp->prev=NULL;
+      temp->next=binode_list;
+      binode_list->prev=temp;
+      binode_list=temp;
+    }
     
-    temp->next->prev=temp->prev;
-    temp->prev->next=temp->next;
-
-    temp->next=memory_list;
-    temp->prev=NULL;
-    memory_list=temp;
   }
   else
   {
@@ -633,12 +663,24 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
                offset);
 #endif
       res = pread (fd, buf, size, offset);
+#ifdef DEBUG_FUXEXMP
+      fprintf (stderr, "Number of bytes read = %d\n", res);
+#endif
       if (res < 4096)
         goto end;
       //Use md5 as key to check if the read block is already in cache
       libhashkit_md5_signature_wrap (buf, res, hash_key);
+#ifdef DEBUG_FUXEXMP
+      fprintf (stderr, "\n1\n");
+#endif
       hash_temp = libhashkit_murmur(hash_key,16);
+#ifdef DEBUG_FUXEXMP
+      fprintf (stderr, "2\n");
+#endif
       status = memory_cache_find (hash_temp, &temp_memory1);
+#ifdef DEBUG_FUXEXMP
+      fprintf (stderr, "3\n");
+#endif
 #ifdef DEBUG_FUXEXMP
       fprintf (stderr, "memory_cache_find status = %d\n", status);
 #endif
