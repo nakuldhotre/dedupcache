@@ -17,6 +17,7 @@ typedef enum  {False,True} Bool;
 typedef struct {
         uint64_t key;
         uint64_t val;
+	uint64_t *pt;
 } bt_key_val;
 
 typedef struct bt_node {
@@ -36,6 +37,12 @@ typedef struct {
         unsigned int (*data_size)(void * data);  // Return the data size
   void (*print_key)(void * key);    // Print the key
 }btree; 
+
+typedef struct linked 
+{
+bt_key_val *kv;
+struct linked *next,*prev;
+}LINKED;
 
 extern btree * btree_create(unsigned int order);
 extern int btree_insert_key(btree * btree, bt_key_val key_val);

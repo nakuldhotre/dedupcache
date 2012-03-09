@@ -359,7 +359,7 @@ binode_cache_add (uint64_t key, unsigned char *hash_key)
 
   temp_hash = libhashkit_murmur(hash_key,16);
 #ifdef DEBUG_FUXEXMP
-  fprintf(stderr, "binode_cache_add: k %llx v %llx hash %lx\n",*(uint64_t *)kv->key,*(uint64_t *)kv->val,temp_hash);
+  fprintf(stderr, "binode_cache_add: k %llx v %llx hash %lx\n",kv.key,kv.val,temp_hash);
 #endif
   btree_insert_key(block_inode_tree, kv);
   return ret;
