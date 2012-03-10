@@ -19,6 +19,7 @@
 #define _XOPEN_SOURCE 500
 #endif
 
+#include <sys/resource.h>
 #include <fuse.h>
 #include <stdio.h>
 #include <string.h>
@@ -69,6 +70,36 @@ libhashkit_md5_signature_wrap (const char *buf, int res, unsigned char *hash_key
 void *
 xmp_init (struct fuse_conn_info *conn)
 {
+  struct rlimit rlim;
+  int ret;
+  ret = getrlimit(RLIMIT_MEMLOCK , &rlim);
+  if (ret == 0)
+  {
+    fprintf(stderr, "memlock limit = soft %lu hard %lu\n",
+            rlim.rlim_cur, rlim.rlim_max);
+  }
+  else
+  {
+    fprintf(stderr, "getrlimit %s", strerror(ret));
+  }
+  rlim.rlim_cur = 524288000;
+  rlim.rlim_max = 624288000;
+  ret = setrlimit(RLIMIT_MEMLOCK, &rlim);
+  if (ret == 0)
+  {
+    fprintf(stderr, "memlock limit = soft %lu hard %lu\n",
+            rlim.rlim_cur, rlim.rlim_max);
+    ret = mlockall(MCL_CURRENT|MCL_FUTURE);
+    if (ret == 0)
+    {
+      fprintf(stderr, "Made all memory pinned!\n");
+    }
+  }
+  else
+  {
+    fprintf(stderr, "Unable to set rlimit. Need root access\n");
+  }
+
   mem_add = 0;
   mem_find = 0;
   binode_add = 0;
@@ -82,6 +113,8 @@ xmp_init (struct fuse_conn_info *conn)
   memory_tree->value = value;
   memory_tree->key_size = keysize;
   memory_tree->data_size = datasize;
+
+  
   return FUSEXMP_DATA;
 }
 
@@ -109,6 +142,7 @@ fprintf(stderr,"Calling destroy..\n");
  }
 
  */
+  munlockall();
   fprintf (stderr, "\ncase1=%d\n", case1);
   fprintf (stderr, "\ncase2=%d\n", case2);
   fprintf (stderr, "\ncase3=%d\n", case3);
@@ -354,18 +388,16 @@ binode_cache_add (uint64_t key, unsigned char *hash_key)
   LINKED *temp;
 
   bt_key_val kv,*kv1;
-if(count_block_inode>MAX_BINODE_COUNT)
-{
-  temp=binode_list;
-  while(temp->next)
-    temp=temp->next;
-  btree_delete_key(block_inode_tree,block_inode_tree->root,temp->kv.key);
-  if (temp->prev)
-    temp->prev->next=NULL;
-  free(temp);
-  fprintf(stderr, "flushing binode cache\n");
-  count_block_inode--;
-}
+  if(count_block_inode>MAX_BINODE_COUNT)
+  {
+    temp=binode_list->prev;
+    btree_delete_key(block_inode_tree,block_inode_tree->root,binode_list->prev->kv.key);
+    binode_list->prev=temp->prev;
+    temp->prev->next=binode_list;
+    free(temp);
+//    fprintf(stderr, "flushing memory cache\n");
+    count_block_inode--;
+  }
 
   kv.key = key;
   kv.val = 0;
@@ -373,17 +405,16 @@ if(count_block_inode>MAX_BINODE_COUNT)
   if(binode_list==NULL)
   {
     binode_list=malloc(sizeof(LINKED));
-    binode_list->prev=NULL;
-    binode_list->next=NULL;
+    binode_list->prev=binode_list;
+    binode_list->next=binode_list;
     temp=binode_list;
   }
   else
   {
     temp=malloc(sizeof(LINKED));
-    temp->prev=NULL;
+    temp->prev=binode_list->prev;
     temp->next=binode_list;
     binode_list->prev=temp;
-    temp->kv=kv;
     binode_list=temp;
   }
   count_block_inode++;
@@ -423,26 +454,17 @@ binode_cache_find (uint64_t key, bt_key_val *temp_binode)
     ret = SUCCESS;
     temp=kv.pt;
 
-    if(temp->prev==NULL);
-    else if(temp->next==NULL)
+    if(temp!=binode_list)
     {
-      temp->prev->next=NULL;
-      temp->prev=NULL;
-      temp->next=binode_list;
-      binode_list->prev=temp;
-      binode_list=temp;
-    }
-    else
-     {
       temp->prev->next=temp->next;
       temp->next->prev=temp->prev;
-      temp->prev=NULL;
+      temp->prev=binode_list->prev;
       temp->next=binode_list;
       binode_list->prev=temp;
       binode_list=temp;
     }
-
   }
+
   else
   {
     ret = FAILURE;
@@ -464,16 +486,16 @@ memory_cache_add (unsigned char *hash_key, unsigned char *data, int size)
   bt_key_val kv;
   if(count_memory_cache>MAX_MEMORY_COUNT)
   {
-    temp=memory_list;
-    while(temp->next)
-      temp=temp->next;
+    temp=memory_list->prev;
+    //while(temp->next)
+     // temp=temp->next;
 
-    btree_delete_key(memory_tree,memory_tree->root,temp->kv.key);
-    if (temp->prev)
-      temp->prev->next=NULL;
+    btree_delete_key(memory_tree,memory_tree->root,memory_list->prev->kv.key);
+   free(memory_list->prev->kv.val);
+  memory_list->prev=temp->prev; 
+  temp->prev->next=memory_list; 
     free(temp);
-
-  fprintf(stderr, "flushing memory cache\n");
+//  fprintf(stderr, "flushing memory cache\n");
     count_memory_cache--;
   }
 
@@ -492,14 +514,14 @@ memory_cache_add (unsigned char *hash_key, unsigned char *data, int size)
   if(memory_list==NULL)
   {
     memory_list=malloc(sizeof(LINKED));
-    memory_list->prev=NULL;
-    memory_list->next=NULL;
+    memory_list->prev=memory_list;
+    memory_list->next=memory_list;
     temp=memory_list;
   }
   else
   {
     temp=malloc(sizeof(LINKED));
-    temp->prev=NULL;
+    temp->prev=memory_list->prev;
     temp->next=memory_list;
     memory_list->prev=temp;
     memory_list=temp;
@@ -529,25 +551,17 @@ memory_cache_find (uint64_t hash_key, bt_key_val  *temp_memory)
     *temp_memory = kv;
     ret = SUCCESS;
     temp=kv.pt;
-    if(temp->prev==NULL);
-     else if(temp->next==NULL)
-    {
-      temp->prev->next=NULL;
-      temp->prev=NULL;
-      temp->next=binode_list;
-      binode_list->prev=temp;
-      binode_list=temp;
-    }
-    else
-    {
-     temp->prev->next=temp->next;
-      temp->next->prev=temp->prev;
-      temp->prev=NULL;
-      temp->next=binode_list;
-      binode_list->prev=temp;
-      binode_list=temp;
-    }
 
+
+    if(temp!=memory_list) 
+    {
+      temp->prev->next=temp->next;
+      temp->next->prev=temp->prev;
+      temp->prev=memory_list->prev;
+      temp->next=memory_list;
+      memory_list->prev=temp;
+      memory_list=temp;
+    } 
 
 
   }
