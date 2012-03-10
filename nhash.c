@@ -26,17 +26,18 @@ int nhash_init_table(nhash_table *table, uint32_t size)
 }
 
 
-int nhash_insert_key(nhash_table *table, uint64_t key, uint64_t val)
+int nhash_insert_key(nhash_table *table, const n_key_val *kv)
 {
 
   uint32_t arr_index;
-//  uint64_t key,val;
+  uint64_t key,val,*pt;
   bucket_entry *bucket=NULL;
   n_key_val *temp = NULL;
   int i;
 
-//  key = kv->key;
-//  val = kv->val;
+  key = kv->key;
+  val = kv->val;
+  pt = kv->pt;
   
   arr_index = ((uint32_t)table->array_mask & key);
   bucket = &table->bucket[arr_index];
@@ -56,7 +57,7 @@ int nhash_insert_key(nhash_table *table, uint64_t key, uint64_t val)
   i = bucket->used_entries;
   bucket->key_val[i].key = key;
   bucket->key_val[i].val = val;
-
+  bucket->key_val[i].pt = pt;
   bucket->used_entries++;
   return 0;
 }

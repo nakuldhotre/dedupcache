@@ -1,3 +1,6 @@
 fusexmp
 fusexmp1
 gmon.out
+*.o
+a.out
+test_nhash
