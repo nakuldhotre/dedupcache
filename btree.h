@@ -38,11 +38,6 @@ typedef struct {
   void (*print_key)(void * key);    // Print the key
 }btree; 
 
-typedef struct linked 
-{
-bt_key_val *kv;
-struct linked *next,*prev;
-}LINKED;
 
 extern btree * btree_create(unsigned int order);
 extern int btree_insert_key(btree * btree, bt_key_val key_val);
@@ -55,6 +50,10 @@ extern uint64_t btree_get_min_key(btree * btree);
 #ifdef DEBUG
 extern void print_subtree(btree * btree,bt_node * node);
 #endif
-
+typedef struct linked 
+{
+  bt_key_val kv;
+  struct linked *next,*prev;
+}LINKED;
 
 #endif

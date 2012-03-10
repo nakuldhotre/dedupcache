@@ -58,6 +58,8 @@ datasize (void *data)
 static btree *block_inode_tree,*memory_tree;
 
 static double mem_add, mem_find, binode_add, binode_find;
+
+static LINKED *binode_list=NULL,*memory_list=NULL;
 void
 libhashkit_md5_signature_wrap (const char *buf, int res, unsigned char *hash_key)
 {
@@ -349,13 +351,45 @@ binode_cache_add (uint64_t key, unsigned char *hash_key)
   int ret = 0, i = 0;
   uint64_t val = 0;
   uint32_t temp_hash;
+  LINKED *temp;
 
-  bt_key_val kv;
-
+  bt_key_val kv,*kv1;
+if(count_block_inode>MAX_BINODE_COUNT)
+{
+  temp=binode_list;
+  while(temp->next)
+    temp=temp->next;
+  btree_delete_key(block_inode_tree,block_inode_tree->root,temp->kv.key);
+  if (temp->prev)
+    temp->prev->next=NULL;
+  free(temp);
+  fprintf(stderr, "flushing binode cache\n");
+  count_block_inode--;
+}
 
   kv.key = key;
   kv.val = 0;
   kv.val = (uint64_t)libhashkit_murmur(hash_key,16);
+  if(binode_list==NULL)
+  {
+    binode_list=malloc(sizeof(LINKED));
+    binode_list->prev=NULL;
+    binode_list->next=NULL;
+    temp=binode_list;
+  }
+  else
+  {
+    temp=malloc(sizeof(LINKED));
+    temp->prev=NULL;
+    temp->next=binode_list;
+    binode_list->prev=temp;
+    temp->kv=kv;
+    binode_list=temp;
+  }
+  count_block_inode++;
+  kv.pt=temp;
+  temp->kv=kv;
+
 
   temp_hash = libhashkit_murmur(hash_key,16);
 #ifdef DEBUG_FUXEXMP
@@ -373,10 +407,13 @@ binode_cache_find (uint64_t key, bt_key_val *temp_binode)
   clock_t start, end;
   int ret = 0;
   bt_key_val kv;
+  LINKED *temp;
 
 #ifdef DEBUG_FUXEXMP
   fprintf(stderr, "binode_cache_find: key = %llx\n", key);
+#ifdef DEBUG
   print_subtree(block_inode_tree, block_inode_tree->root);
+#endif
 #endif
   kv = btree_search(block_inode_tree,key);
 
@@ -384,6 +421,27 @@ binode_cache_find (uint64_t key, bt_key_val *temp_binode)
   {
     *temp_binode = kv;
     ret = SUCCESS;
+    temp=kv.pt;
+
+    if(temp->prev==NULL);
+    else if(temp->next==NULL)
+    {
+      temp->prev->next=NULL;
+      temp->prev=NULL;
+      temp->next=binode_list;
+      binode_list->prev=temp;
+      binode_list=temp;
+    }
+    else
+     {
+      temp->prev->next=temp->next;
+      temp->next->prev=temp->prev;
+      temp->prev=NULL;
+      temp->next=binode_list;
+      binode_list->prev=temp;
+      binode_list=temp;
+    }
+
   }
   else
   {
@@ -400,8 +458,26 @@ memory_cache_add (unsigned char *hash_key, unsigned char *data, int size)
   clock_t start, end;
   int ret = 0, i;
   uint64_t val = 0;
+  unsigned char temp_md5_hash[16];
+  LINKED *temp;
 
   bt_key_val kv;
+  if(count_memory_cache>MAX_MEMORY_COUNT)
+  {
+    temp=memory_list;
+    while(temp->next)
+      temp=temp->next;
+
+    btree_delete_key(memory_tree,memory_tree->root,temp->kv.key);
+    if (temp->prev)
+      temp->prev->next=NULL;
+    free(temp);
+
+  fprintf(stderr, "flushing memory cache\n");
+    count_memory_cache--;
+  }
+
+
 
 
   kv.key = libhashkit_murmur(hash_key,16);
@@ -412,7 +488,25 @@ memory_cache_add (unsigned char *hash_key, unsigned char *data, int size)
   data_block = malloc (4096);
   kv.val = (uint64_t)data_block;
   memcpy (data_block, data, size);
-  
+
+  if(memory_list==NULL)
+  {
+    memory_list=malloc(sizeof(LINKED));
+    memory_list->prev=NULL;
+    memory_list->next=NULL;
+    temp=memory_list;
+  }
+  else
+  {
+    temp=malloc(sizeof(LINKED));
+    temp->prev=NULL;
+    temp->next=memory_list;
+    memory_list->prev=temp;
+    memory_list=temp;
+  }
+  count_memory_cache++;
+  kv.pt=temp;
+  temp->kv=kv;
 
   btree_insert_key(memory_tree,kv);
 exit:
@@ -426,14 +520,36 @@ memory_cache_find (uint64_t hash_key, bt_key_val  *temp_memory)
   clock_t start, end;
   int ret = 0;
   bt_key_val kv;
+  LINKED *temp;
 
   kv = btree_search(memory_tree,hash_key);
 
   if (kv.val != 0)
   {
     *temp_memory = kv;
-
     ret = SUCCESS;
+    temp=kv.pt;
+    if(temp->prev==NULL);
+     else if(temp->next==NULL)
+    {
+      temp->prev->next=NULL;
+      temp->prev=NULL;
+      temp->next=binode_list;
+      binode_list->prev=temp;
+      binode_list=temp;
+    }
+    else
+    {
+     temp->prev->next=temp->next;
+      temp->next->prev=temp->prev;
+      temp->prev=NULL;
+      temp->next=binode_list;
+      binode_list->prev=temp;
+      binode_list=temp;
+    }
+
+
+
   }
   else
   {

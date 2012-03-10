@@ -747,6 +747,7 @@ bt_key_val btree_search(btree * btree, uint64_t key) {
   bt_key_val key_val;
   key_val.key = 0;
   key_val.val = 0;
+  key_val.pt = NULL;
 
   node_pos kp = get_btree_node(btree,key);
 
@@ -769,6 +770,7 @@ static void copy_key_val(btree * btree, bt_key_val  *src, bt_key_val  *dst) {
         dst->key = src->key;
         
         dst->val = src->val;
+        dst->pt = src->pt;
         
 }
 
