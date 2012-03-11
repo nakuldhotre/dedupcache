@@ -26,38 +26,40 @@ int nhash_init_table(nhash_table *table, uint32_t size)
 }
 
 
-int nhash_insert_key(nhash_table *table, const n_key_val *kv)
+int nhash_insert_key(nhash_table *table, n_key_val *nodeptr)
 {
 
   uint32_t arr_index;
-  uint64_t key,val,*pt;
+//  uint64_t key,val;
   bucket_entry *bucket=NULL;
   n_key_val *temp = NULL;
   int i;
 
-  key = kv->key;
-  val = kv->val;
-  pt = kv->pt;
+//  key = kv->key;
+//  val = kv->val;
   
-  arr_index = ((uint32_t)table->array_mask & key);
+  arr_index = ((uint32_t)table->array_mask & nodeptr->key);
   bucket = &table->bucket[arr_index];
   if (bucket->max_entries == 0)
   {
-    bucket->key_val = malloc(sizeof (n_key_val) * 5);
-    bucket->max_entries = 5;
+    bucket->key_val = malloc(sizeof (n_key_val) * 10);
+    bucket->max_entries = 10;
   }
   else if (bucket->max_entries == bucket->used_entries)
   {
-    temp = malloc(sizeof(n_key_val) * ( bucket->max_entries+5));
+    temp = malloc(sizeof(n_key_val) * ( bucket->max_entries+10));
     memcpy(temp,bucket->key_val, sizeof(n_key_val)*(bucket->max_entries));
     free(bucket->key_val);
     bucket->key_val = temp;
-    bucket->max_entries +=5;
+    bucket->max_entries +=10;
   }
   i = bucket->used_entries;
+
+  bucket->key_val[i] = *nodeptr;
+/*
   bucket->key_val[i].key = key;
-  bucket->key_val[i].val = val;
-  bucket->key_val[i].pt = pt;
+  bucket->key_val[i].val = val;*/
+
   bucket->used_entries++;
   return 0;
 }
@@ -106,11 +108,7 @@ n_key_val * nhash_search_key(nhash_table *table, uint64_t key)
 
   arr_index = ((uint32_t)table->array_mask & key);
   bucket = &table->bucket[arr_index];
-  if (bucket->max_entries == 0)
-  {
-    return NULL; /* Key not found */
-  }
-  else
+  if (bucket->max_entries)
   {
     for(i=0;i<bucket->used_entries; i++)
     {
@@ -120,5 +118,7 @@ n_key_val * nhash_search_key(nhash_table *table, uint64_t key)
       }
     }
   }
+  else
+    return NULL;
   return NULL;
 }

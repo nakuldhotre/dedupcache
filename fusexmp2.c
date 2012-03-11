@@ -30,15 +30,12 @@
 #include <sys/time.h>
 #include <sys/mman.h>
 #include <time.h>
-#include "uthash.h"
-#include "fusexmp1.h"
 #ifdef HAVE_SETXATTR
 #include <sys/xattr.h>
 #endif
 #include <libhashkit/hashkit.h>
-#include "btree.h"
-
 #include "nhash.h"
+#include "fusexmp1.h"
 
 uint64_t
 value (void *key)
@@ -108,10 +105,10 @@ xmp_init (struct fuse_conn_info *conn)
   binode_add = 0;
   binode_find = 0;
   binode_table = malloc(sizeof(nhash_table));
-  nhash_init_table (binode_table, 10000);
+  nhash_init_table (binode_table, 100000);
 
   memory_table = malloc(sizeof(nhash_table));
-  nhash_init_table (memory_table, 1000);
+  nhash_init_table (memory_table, 10000);
 
   return FUSEXMP_DATA;
 }
@@ -377,15 +374,15 @@ xmp_open (const char *path, struct fuse_file_info *fi)
 }
 
 int
-binode_cache_add (uint64_t key, unsigned char *hash_key)
+binode_cache_add (uint64_t key, uint64_t hash_temp)
 {
   clock_t start, end;
   int ret = 0, i = 0;
   uint64_t val = 0;
   uint32_t temp_hash;
   LINKED *temp;
+  n_key_val kv;
 
-  n_key_val kv,*kv1;
   if(count_block_inode>MAX_BINODE_COUNT)
   {
     temp=binode_list->prev;
@@ -396,10 +393,8 @@ binode_cache_add (uint64_t key, unsigned char *hash_key)
 //    fprintf(stderr, "flushing memory cache\n");
     count_block_inode--;
   }
-
-  kv.key = key;
-  kv.val = 0;
-  kv.val = (uint64_t)libhashkit_murmur(hash_key,16);
+  kv.key=key;
+  kv.val = hash_temp;
   if(binode_list==NULL)
   {
     binode_list=malloc(sizeof(LINKED));
@@ -420,9 +415,8 @@ binode_cache_add (uint64_t key, unsigned char *hash_key)
   temp->kv=kv;
 
 
-  temp_hash = libhashkit_murmur(hash_key,16);
 #ifdef DEBUG_FUXEXMP
-  fprintf(stderr, "binode_cache_add: k %llx v %llx hash %lx\n",kv.key,kv.val,temp_hash);
+  fprintf(stderr, "binode_cache_add: k %llx v %llx hash %lx\n",kv.key,kv.val,hash_temp);
 #endif
   nhash_insert_key(binode_table, &kv);
   return ret;
@@ -435,7 +429,7 @@ binode_cache_find (uint64_t key, n_key_val *temp_binode)
 {
   clock_t start, end;
   int ret = 0;
-  bt_key_val kv;
+  n_key_val *kv;
   LINKED *temp;
 
 #ifdef DEBUG_FUXEXMP
@@ -444,13 +438,13 @@ binode_cache_find (uint64_t key, n_key_val *temp_binode)
   print_subtree(block_inode_tree, block_inode_tree->root);
 #endif
 #endif
-  kv = btree_search(block_inode_tree,key);
+  kv = nhash_search_key(binode_table,key);
 
-  if (kv.val != 0)
+  if (kv)
   {
-    *temp_binode = kv;
+    *temp_binode = *kv;
     ret = SUCCESS;
-    temp=kv.pt;
+    temp=kv->pt;
 
     if(temp!=binode_list)
     {
@@ -472,7 +466,7 @@ binode_cache_find (uint64_t key, n_key_val *temp_binode)
 }
 
 int
-memory_cache_add (unsigned char *hash_key, unsigned char *data, int size)
+memory_cache_add (uint64_t hash_temp, unsigned char *data, int size)
 {
   unsigned char *data_block = NULL;
   clock_t start, end;
@@ -481,28 +475,24 @@ memory_cache_add (unsigned char *hash_key, unsigned char *data, int size)
   unsigned char temp_md5_hash[16];
   LINKED *temp;
 
-  bt_key_val kv;
+  n_key_val kv;
   if(count_memory_cache>MAX_MEMORY_COUNT)
   {
     temp=memory_list->prev;
     //while(temp->next)
-     // temp=temp->next;
+    // temp=temp->next;
 
-    btree_delete_key(memory_tree,memory_tree->root,memory_list->prev->kv.key);
-   free(memory_list->prev->kv.val);
-  memory_list->prev=temp->prev; 
-  temp->prev->next=memory_list; 
+    nhash_delete_key(memory_table,memory_list->prev->kv.key);
+    free(memory_list->prev->kv.val);
+    memory_list->prev=temp->prev; 
+    temp->prev->next=memory_list; 
     free(temp);
-//  fprintf(stderr, "flushing memory cache\n");
+    //  fprintf(stderr, "flushing memory cache\n");
     count_memory_cache--;
   }
 
-
-
-
-  kv.key = libhashkit_murmur(hash_key,16);
+  kv.key = hash_temp;
   kv.val = 0;
-
 
   start = clock ();
   data_block = malloc (4096);
@@ -528,27 +518,27 @@ memory_cache_add (unsigned char *hash_key, unsigned char *data, int size)
   kv.pt=temp;
   temp->kv=kv;
 
-  btree_insert_key(memory_tree,kv);
+  nhash_insert_key(memory_table,&kv);
 exit:
   return ret;
 }
 
 int
-memory_cache_find (uint64_t hash_key, bt_key_val  *temp_memory)
+memory_cache_find (uint64_t hash_key, n_key_val  *temp_memory)
 {
 
   clock_t start, end;
   int ret = 0;
-  bt_key_val kv;
+  n_key_val *kv;
   LINKED *temp;
 
-  kv = btree_search(memory_tree,hash_key);
+  kv = nhash_search_key(memory_table,hash_key);
 
-  if (kv.val != 0)
+  if (kv)
   {
-    *temp_memory = kv;
+    *temp_memory = *kv;
     ret = SUCCESS;
-    temp=kv.pt;
+    temp=kv->pt;
 
 
     if(temp!=memory_list) 
@@ -576,18 +566,17 @@ static int
 xmp_read (const char *path, char *buf, size_t size, off_t offset,
           struct fuse_file_info *fi)
 {
-  int fd, status,i;
-  int res, found_index;
+  int fd, status;
+  int res;
   uint32_t block_num;
-  unsigned char hash_key[16], *data_block,temp_md5_hash[16];
   uint64_t key,hash_temp,key1;
   struct stat stbuf;
   clock_t start, end;
 
-  STATS case_1, case_2, case_3, case_4;
+  //STATS case_1, case_2, case_3, case_4;
 
-  bt_key_val temp_binode1;
-  bt_key_val temp_memory1;
+  n_key_val temp_binode1;
+  n_key_val temp_memory1;
 
   start = clock ();
 #ifdef DEBUG_FUXEXMP
@@ -639,7 +628,8 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
           if (res < 4096)
             goto end;
           //Adding a new entry into (hash,data blocks) table
-          status = memory_cache_add (hash_key, buf, res);
+          hash_temp = libhashkit_murmur(buf,res);
+          status = memory_cache_add (hash_temp, buf, res);
           if (status)
             goto end;
           case2++;
@@ -667,8 +657,8 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
       if (res < 4096)
         goto end;
       //Use md5 as key to check if the read block is already in cache
-      libhashkit_md5_signature_wrap (buf, res, hash_key);
-      hash_temp = libhashkit_murmur(hash_key,16);
+//      libhashkit_md5_signature_wrap (buf, res, hash_key);
+      hash_temp = libhashkit_murmur(buf,res);
       status = memory_cache_find (hash_temp, &temp_memory1);
 #ifdef DEBUG_FUXEXMP
       fprintf (stderr, "memory_cache_find status = %d\n", status);
@@ -677,13 +667,13 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
       if (status == FAILURE)    //if block is not present
         {
           //Adding a new entry into (inode:blocknumber,hash) table
-          status = binode_cache_add (key, hash_key);
+          status = binode_cache_add (key, hash_temp);
           if (status)
             goto end;
           count_block_inode++;
 
           //Adding a new entry into (hash,data blocks) table
-          status = memory_cache_add (hash_key, buf, res);
+          status = memory_cache_add (hash_temp, buf, res);
           if (status)
             goto end;
           case3++;
@@ -693,7 +683,7 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
       else                      //if block is present, create a new entry in (block:inode,hash) table
         {
           //Adding a new entry into (inode:blocknumber,hash) table
-          status = binode_cache_add (key, hash_key);
+          status = binode_cache_add (key, hash_temp);
           if (status)
             goto end;
           case4++;

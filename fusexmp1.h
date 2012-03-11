@@ -1,5 +1,5 @@
-#define MAX_MEMORY_COUNT 10000
-#define MAX_BINODE_COUNT 100000
+#define MAX_MEMORY_COUNT 100000
+#define MAX_BINODE_COUNT 5000000
 #define SUCCESS 0
 #define FAILURE 1
 
@@ -7,7 +7,6 @@ typedef struct
 {
 	uint64_t inode_block;
 	unsigned char hash_key[16];
-        UT_hash_handle hh;
 }HASH_TABLE_INODE_N_BLOCK;
 
 
@@ -20,12 +19,10 @@ typedef struct
         UT_hash_handle hh;
 }HASH_TABLE_MD5_CACHE;
 */
-
 typedef struct 
 {
         unsigned char hash_key[16];
         unsigned char *data_block;
-        UT_hash_handle hh;
 }HASH_TABLE_MEMORY_CACHE;
 
 HASH_TABLE_INODE_N_BLOCK *block_inode=NULL;
