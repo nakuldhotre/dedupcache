@@ -4,3 +4,10 @@ gmon.out
 *.o
 a.out
 test_nhash
+binode_hash
+fusexmp12.c
+fusexmp2
+fusexmp2-r.c
+fusexmp3
+nhash.h.gch
+

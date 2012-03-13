@@ -32,6 +32,10 @@ HASH_TABLE_MEMORY_CACHE *memory=NULL;
 static int count_block_inode=0,count_memory_cache=0,case1=0,case2=0,case3=0,case4=0;
 
 static int case5=0,case6=0;
+static int binode_cache_miss, memory_cache_miss;
+static int binode_cache_total, memory_cache_total;
+static int binode_eviction_done=0,memory_eviction_done=0;
+
 //char cases[3][10]={"Ranjan","nakul","india"};
 
 typedef struct

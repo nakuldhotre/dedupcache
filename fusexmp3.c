@@ -120,6 +120,8 @@ xmp_init (struct fuse_conn_info *conn)
 void
 xmp_destroy ()
 {
+
+  float binode_percent,memory_percent;
 /*HASH_TABLE_MEMORY_CACHE *temp2;
 HASH_TABLE_INODE_N_BLOCK *temp1;
 fprintf(stderr,"Calling destroy..\n");
@@ -148,6 +150,17 @@ fprintf(stderr,"Calling destroy..\n");
   fprintf (stderr, "\ncase4=%d\n", case4);
   fprintf (stderr, "\ncase5=%d\n", case5);
   fprintf (stderr, "\ncase6=%d\n", case6);
+
+  binode_percent = ((float)(binode_cache_total-binode_cache_miss)/(float)binode_cache_total)*100.0;
+
+  memory_percent = ((float)(memory_cache_total-memory_cache_miss)/(float)memory_cache_total)*100.0;
+
+  fprintf (stderr, "\nbinode_cache  hit\/miss\/total %d\/%d\/%d \n Hit ratio %.2f\n Cache utilization %d\/%d\n", (binode_cache_total-binode_cache_miss), 
+          binode_cache_miss, binode_cache_total, binode_percent,count_block_inode, MAX_BINODE_COUNT);
+
+  fprintf (stderr, "\nmemory_cache  hit\/miss\/total %d\/%d\/%d\n Hit ratio %.2f\n Cache utilization %d\/%d\n", (memory_cache_total-memory_cache_miss), 
+          memory_cache_miss, memory_cache_total, memory_percent, count_memory_cache, MAX_MEMORY_COUNT);
+
 }
 
 static int
@@ -382,10 +395,7 @@ xmp_open (const char *path, struct fuse_file_info *fi)
 int
 binode_cache_add (uint64_t key, uint64_t hash_temp)
 {
-  clock_t start, end;
-  int ret = 0, i = 0;
-  uint64_t val = 0;
-  uint32_t temp_hash;
+  int ret = 0;
   LINKED *temp;
   n_key_val kv;
 
@@ -397,6 +407,8 @@ binode_cache_add (uint64_t key, uint64_t hash_temp)
     temp->prev->next=binode_list;
     free(temp);
 //    fprintf(stderr, "flushing memory cache\n");
+
+    binode_eviction_done = 1;
     count_block_inode--;
   }
   kv.key=key;
@@ -433,11 +445,11 @@ binode_cache_add (uint64_t key, uint64_t hash_temp)
 int
 binode_cache_find (uint64_t key, n_key_val *temp_binode)
 {
-  clock_t start, end;
   int ret = 0;
   n_key_val *kv;
   LINKED *temp;
 
+  binode_cache_total++;
 #ifdef DEBUG_FUXEXMP
   fprintf(stderr, "binode_cache_find: key = %llx\n", key);
 #ifdef DEBUG
@@ -465,6 +477,8 @@ binode_cache_find (uint64_t key, n_key_val *temp_binode)
 
   else
   {
+    if (binode_eviction_done)  /* We dont assume cache miss if eviction never happened */
+      binode_cache_miss++;
     ret = FAILURE;
   }
 
@@ -475,10 +489,7 @@ int
 memory_cache_add (uint64_t hash_temp, unsigned char *data, int size)
 {
   unsigned char *data_block = NULL;
-  clock_t start, end;
-  int ret = 0, i;
-  uint64_t val = 0;
-  unsigned char temp_md5_hash[16];
+  int ret = 0;
   LINKED *temp;
 
   n_key_val kv;
@@ -494,13 +505,13 @@ memory_cache_add (uint64_t hash_temp, unsigned char *data, int size)
     temp->prev->next=memory_list; 
     free(temp);
     //  fprintf(stderr, "flushing memory cache\n");
+    memory_eviction_done = 1;
     count_memory_cache--;
   }
 
   kv.key = hash_temp;
   kv.val = 0;
 
-  start = clock ();
   data_block = malloc (4096);
   kv.val = (uint64_t)data_block;
   memcpy (data_block, data, size);
@@ -525,7 +536,6 @@ memory_cache_add (uint64_t hash_temp, unsigned char *data, int size)
   temp->kv=kv;
 
   nhash_insert_key(memory_table,&kv);
-exit:
   return ret;
 }
 
@@ -533,11 +543,11 @@ int
 memory_cache_find (uint64_t hash_key, n_key_val  *temp_memory)
 {
 
-  clock_t start, end;
   int ret = 0;
   n_key_val *kv;
   LINKED *temp;
 
+  memory_cache_total++;
   kv = nhash_search_key(memory_table,hash_key);
 
   if (kv)
@@ -561,6 +571,8 @@ memory_cache_find (uint64_t hash_key, n_key_val  *temp_memory)
   }
   else
   {
+    if (memory_eviction_done)
+      memory_cache_miss++;
     ret = FAILURE;
   }
 
@@ -599,14 +611,12 @@ xmp_read (const char *path, char *buf, size_t size, off_t offset,
   uint32_t block_num;
   uint64_t key,hash_temp,key1;
   struct stat stbuf;
-  clock_t start, end;
 
   //STATS case_1, case_2, case_3, case_4;
 
   n_key_val temp_binode1;
   n_key_val temp_memory1,*binode_hash_key,temp_memory;
 
-  start = clock ();
 #ifdef DEBUG_FUXEXMP
   fprintf (stderr, "Reading...\n");
   fprintf (stderr, "binode size = %d cache size = %d\n",
@@ -758,7 +768,6 @@ end:
     res = -errno;
 
 
-  end = clock ();
   close (fd);
   return res;
 }
@@ -770,11 +779,48 @@ xmp_write (const char *path, const char *buf, size_t size,
   int fd;
   int res;
 
+  n_key_val *ptr,*binode_hash_key = NULL;
+  n_key_val temp_binode, temp_memory;
+  uint64_t key,key1,data_hash,val,block_num;
+  struct stat stbuf;
+  int ret;
+  
+
+  
   (void) fi;
   fd = open (path, O_WRONLY);
   if (fd == -1)
     return -errno;
 
+  if (offset%4096 == 0 && size == 4096)
+  {
+    lstat64 (path, &stbuf);
+    block_num = offset / 4096;
+    key = stbuf.st_ino;
+    key = key<<32;
+    key = key + block_num;
+    key1 = libhashkit_murmur((unsigned char *)&key, 8);
+    key = key1;
+    if (binode_cache_find(key,&temp_binode) == 0)
+    {
+      data_hash = libhashkit_murmur(buf, 4096);
+      ptr=binode_list->kv.pt;
+
+      ptr->val=data_hash;
+      if (memory_cache_find(data_hash, &temp_memory) == FAILURE)
+      {
+        ret = memory_cache_add(data_hash, buf, 4096);
+        if (ret)
+            goto end;
+      }
+      binode_hash_key = nhash_search_key(binode_hash_table, key);
+      if (binode_hash_key !=NULL)
+        binode_hash_key->val = val; 
+    }
+  }
+
+
+end:
   res = pwrite (fd, buf, size, offset);
   if (res == -1)
     res = -errno;
