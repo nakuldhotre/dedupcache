@@ -781,26 +781,30 @@ xmp_write (const char *path, const char *buf, size_t size,
 
   n_key_val *ptr,*binode_hash_key = NULL;
   n_key_val temp_binode, temp_memory;
-  uint64_t key,key1,data_hash,val,block_num;
+  uint64_t key,key1,data_hash,block_num;
   struct stat stbuf;
   int ret;
-  
+  char temp_buf[4096];
 
   
   (void) fi;
   fd = open (path, O_WRONLY);
   if (fd == -1)
     return -errno;
+  lstat64 (path, &stbuf);
+  block_num = offset / 4096;
+  key = stbuf.st_ino;
+  key = key<<32;
+  key = key + block_num;
+  key1 = libhashkit_murmur((unsigned char *)&key, 8);
+  key = key1;
+
+
+  if (offset + size <4096 && stbuf.st_size <4096)
+    goto end;
 
   if (offset%4096 == 0 && size == 4096)
   {
-    lstat64 (path, &stbuf);
-    block_num = offset / 4096;
-    key = stbuf.st_ino;
-    key = key<<32;
-    key = key + block_num;
-    key1 = libhashkit_murmur((unsigned char *)&key, 8);
-    key = key1;
     if (binode_cache_find(key,&temp_binode) == 0)
     {
       data_hash = libhashkit_murmur(buf, 4096);
@@ -815,9 +819,113 @@ xmp_write (const char *path, const char *buf, size_t size,
       }
       binode_hash_key = nhash_search_key(binode_hash_table, key);
       if (binode_hash_key !=NULL)
-        binode_hash_key->val = val; 
+        binode_hash_key->val = data_hash; 
     }
   }
+  else if (offset%4096 == 0 && size <4096)
+  {
+    if (binode_cache_find(key,&temp_binode) == 0)
+    {
+      
+      if (memory_cache_find(temp_binode.val, &temp_memory) == SUCCESS)
+      {
+        memcpy(temp_buf,temp_memory.val,4096);
+        memcpy(temp_buf, buf, size);
+
+        data_hash = libhashkit_murmur(temp_buf, 4096);
+        ret = memory_cache_add(data_hash, temp_buf, 4096);
+        if (ret)
+            goto end;
+
+        ptr=binode_list->kv.pt;
+        ptr->val=data_hash;
+        binode_hash_key = nhash_search_key(binode_hash_table, key);
+        if (binode_hash_key !=NULL)
+          binode_hash_key->val = data_hash;
+
+      }
+    }
+  }
+  else if ((offset+size)/4096 == offset/4096)
+  {
+   if (binode_cache_find(key,&temp_binode) == 0)
+   {
+    if (memory_cache_find(temp_binode.val, &temp_memory) == SUCCESS)
+    {
+        memcpy(temp_buf,temp_memory.val,4096);
+        memcpy(temp_buf+(offset%4096), buf, size);
+
+        data_hash = libhashkit_murmur(temp_buf, 4096);
+        ret = memory_cache_add(data_hash, temp_buf, 4096);
+        if (ret)
+            goto end;
+
+        ptr=binode_list->kv.pt;
+        ptr->val=data_hash;
+        binode_hash_key = nhash_search_key(binode_hash_table, key);
+        if (binode_hash_key !=NULL)
+          binode_hash_key->val = data_hash;
+
+      }
+
+    }
+  }
+  else
+  {
+
+   if (binode_cache_find(key,&temp_binode) == 0)
+   {
+    if (memory_cache_find(temp_binode.val, &temp_memory) == SUCCESS)
+    {
+        memcpy(temp_buf,temp_memory.val,4096);
+        memcpy(temp_buf+(offset%4096), buf, 4096-(offset%4096));
+
+        data_hash = libhashkit_murmur(temp_buf, 4096);
+        ret = memory_cache_add(data_hash, temp_buf, 4096);
+        if (ret)
+            goto end;
+
+        ptr=binode_list->kv.pt;
+        ptr->val=data_hash;
+        binode_hash_key = nhash_search_key(binode_hash_table, key);
+        if (binode_hash_key !=NULL)
+          binode_hash_key->val = data_hash;
+
+
+        block_num = offset / 4096;
+        key = stbuf.st_ino;
+        key = key<<32;
+        key = key + block_num+1;
+        key1 = libhashkit_murmur((unsigned char *)&key, 8);
+        key = key1;
+        if (binode_cache_find(key,&temp_binode) == 0)
+        {
+          if (memory_cache_find(temp_binode.val, &temp_memory) == SUCCESS)
+          {
+              memcpy(temp_buf,temp_memory.val,4096);
+              memcpy(temp_buf, buf+ 4096-(offset%4096), size - (4096-(offset%4096)));
+
+              data_hash = libhashkit_murmur(temp_buf, 4096);
+              ret = memory_cache_add(data_hash, temp_buf, 4096);
+              if (ret)
+                goto end;
+              ptr=binode_list->kv.pt;
+              ptr->val=data_hash;
+              binode_hash_key = nhash_search_key(binode_hash_table, key);
+              if (binode_hash_key !=NULL)
+                binode_hash_key->val = data_hash;
+            }
+
+      }
+     }   
+
+    }
+
+
+
+
+  }
+
 
 
 end:
