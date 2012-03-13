@@ -587,6 +587,9 @@ int binode_populate_table()
   uint64_t binode_key,data_hash;
   n_key_val binode_kv;
   fp = fopen("/tmp/binode_hash", "r");
+
+  if (fp == NULL)
+	return 1;
   while (!feof(fp))
   {
     res = fscanf(fp, "%llu %llu", &binode_key, &data_hash);
